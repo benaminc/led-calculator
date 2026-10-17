@@ -103,3 +103,9 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - 109.8 mm between the left and right corner pockets.
   - The corner radius of about 7 mm is estimated from a screenshot, not measured.
   - At 60 px/m that gives 21 LEDs per tile as one loop, or 18 cut per side.
+
+## Version control
+
+- The folder is a git repo on branch `main`. Commit after each change to a tool.
+- `.gitattributes` keeps text files LF. `core.autocrlf` and `core.filemode` are off for this repo, so the Windows and OneDrive sides do not show false changes.
+- Saved configs in `configs/` are committed too.
