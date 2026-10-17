@@ -7,7 +7,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
 - `configs/`: saved configurations, one subfolder per tool (see Conventions). The JSON files are git-ignored.
 
 - `LED Matrix Planner.html`: plans either a 2D strip matrix or a straight strip run. It covers LED count, strip to buy, power supply size, power injection points, wire gauge, voltage drop, a canvas wiring preview, and the values to type into WLED.
-- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
+- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. A Measure tool gives the distance between any two points. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
 
 ## Conventions
 
@@ -78,6 +78,11 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - Lids: one per tile.
 - Data path: it first tries a tile-to-tile path through neighbours from the data-in tile (DFS with Warnsdorff ordering). If no such path exists, it walks greedily and marks the long jump wires.
 - Power injection lands at the start of a tile: every floor(inject spacing ÷ LEDs per tile) tiles, at least 1. Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
+- Measure tool (`tool = "measure"`):
+  - Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres within about 16 px; anywhere else gives a free point.
+  - It reports the straight-line distance plus its horizontal (↔) and vertical (↕) parts in mm, in screen orientation, so point-top layouts swap them.
+  - Measurements scale by the outer side length (the circumradius) and assume tiles butt together with no gap.
+  - They are stored as `measures` in unrotated unit coordinates, are saved with the state and configs, and are drawn in every tool. Only the newest one shows its ↔/↕ legs, to keep the canvas readable.
 - Filament and print time:
   - Each part has slicer figures (`g_<part>`, `t_<part>`: grams and model minutes for one part). They sit in the "Per-part slicer figures" panel and are saved with configs.
   - Lids and walls print one per plate, so each gets model time plus the "setup per plate" overhead (default 6 min, Bambu's prepare time).
