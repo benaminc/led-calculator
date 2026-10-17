@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LED Matrix Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench — controls panel on the left, live wiring preview and the numbers you need on the right; stacks on phones. */
+:root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --ink: #1b2230;
+  --muted: #5d6677;
+  --line: #d5dae2;
+  --accent: #c76a00;      /* warm LED amber */
+  --accent-soft: #fbe9d2;
+  --trace: #2f6f9f;       /* data line, like a PCB trace */
+  --pwr: #c2372f;         /* power injection */
+  --dot-off: #c9cfd8;
+  --font-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
+    --accent: #ffad42; --accent-soft: #3a2a14; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
+  --accent: #ffad42; --accent-soft: #3a2a14; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.9rem; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+h1 span { color: var(--accent); }
+header p { margin: 0; color: var(--muted); max-width: 60ch; }
+.grid { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 12px; }
+fieldset { border: 0; padding: 0; margin: 0 0 18px; display: grid; gap: 10px; }
+fieldset:last-child { margin-bottom: 0; }
+legend { font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 0; margin-bottom: 10px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+input[type="number"], input[type="text"], select {
+  font: 500 0.95rem var(--font-mono); color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { font: 500 0.85rem var(--font-body); padding: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--ink); }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.hint { font-size: 0.8rem; color: var(--muted); margin: 0; }
+
+.preview-wrap { position: relative; width: 100%; overflow: hidden; }
+canvas { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { background: var(--panel); padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font: 600 1.35rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.stat span { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stat small { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; font-size: 0.9rem; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.note { font-size: 0.85rem; color: var(--muted); margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
+.warn { color: var(--pwr); }
+
+.wled { font: 0.85rem/1.7 var(--font-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; margin: 0; }
+.wled .k { color: var(--muted); }
+.wled .h { color: var(--accent); font-weight: 500; }
+.copy { font: 500 0.82rem var(--font-body); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.copy:hover { border-color: var(--accent); }
+.head-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.head-row h2 { margin: 0; }
+footer { font-size: 0.8rem; color: var(--muted); }
+.cfg-row { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; gap: 8px; align-items: stretch; }
+.cfg-row .copy { padding: 5px 12px; }
+.copy.armed { border-color: var(--pwr); color: var(--pwr); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>LED Matrix <span>Planner</span></h1>
+    <p>Plan a strip matrix or a straight run before you flash anything: size, strip length, power, injection points and the WLED settings to enter later.</p>
+  </header>
+
+  <div class="grid">
+    <form class="panel" id="form" onsubmit="return false">
+      <fieldset id="cfgSet">
+        <legend>Saved configurations</legend>
+        <div class="cfg-row">
+          <input type="text" id="cfgName" placeholder="Name this setup" aria-label="Configuration name" maxlength="80">
+          <button type="button" class="copy" id="cfgSave">Save</button>
+        </div>
+        <div class="cfg-row" id="cfgListRow">
+          <select id="cfgList" aria-label="Saved configurations"></select>
+          <button type="button" class="copy" id="cfgLoad">Load</button>
+          <button type="button" class="copy" id="cfgDel">Delete</button>
+        </div>
+        <div class="btns">
+          <button type="button" class="copy" id="cfgPick">Choose configs folder</button>
+          <button type="button" class="copy" id="cfgOpen" hidden>Load from file</button>
+        </div>
+        <p class="hint" id="cfgStatus"></p>
+        <input type="file" id="cfgFile" accept=".json,application/json" hidden>
+      </fieldset>
+
+      <fieldset>
+        <legend>Build type</legend>
+        <div class="seg" role="group" aria-label="Build type">
+          <button type="button" id="buildMatrix" aria-pressed="true">Matrix</button>
+          <button type="button" id="buildStrip" aria-pressed="false">Straight strip</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="sizeLegend">Grid size</legend>
+        <div class="seg" role="group" aria-label="Size mode" id="modeSeg">
+          <button type="button" id="modeSize" aria-pressed="true">From dimensions</button>
+          <button type="button" id="modeCount" aria-pressed="false">From LED count</button>
+        </div>
+        <div class="row2" id="sizeInputs">
+          <label for="wcm">Width (cm)<input type="number" id="wcm" min="1" step="0.5" value="50"></label>
+          <label for="hcm">Height (cm)<input type="number" id="hcm" min="1" step="0.5" value="30"></label>
+        </div>
+        <div class="row2" id="countInputs" hidden>
+          <label for="cols">Columns (LEDs)<input type="number" id="cols" min="1" step="1" value="32"></label>
+          <label for="rows">Rows<input type="number" id="rows" min="1" step="1" value="16"></label>
+        </div>
+        <div class="row2" id="stripInputs" hidden>
+          <label for="lenm">Total length (m)<input type="number" id="lenm" min="0.1" step="0.1" value="5"></label>
+          <label for="segs">Pieces in the chain<input type="number" id="segs" min="1" step="1" value="1"></label>
+        </div>
+        <div class="row2">
+          <label for="density">Strip density
+            <select id="density">
+              <option value="30">30 LEDs/m</option>
+              <option value="60" selected>60 LEDs/m</option>
+              <option value="96">96 LEDs/m</option>
+              <option value="144">144 LEDs/m</option>
+            </select>
+          </label>
+          <label for="rowgap" id="rowgapLabel">Row spacing (mm)<input type="number" id="rowgap" min="1" step="0.1" value="16.7"></label>
+        </div>
+        <p class="hint"><span id="rowgapHint">Row spacing equal to the LED pitch gives square pixels. </span><span id="pitchHint"></span></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Strip type and power</legend>
+        <label for="chip">LED chip
+          <select id="chip">
+            <option value="ws2812b">WS2812B (5V, RGB)</option>
+            <option value="sk6812">SK6812 (5V, RGBW)</option>
+            <option value="sk6812_12">SK6812 (12V, RGBW)</option>
+            <option value="ws2815">WS2815 (12V, RGB)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <div class="row2">
+          <label for="volts">Voltage (V)<input type="number" id="volts" min="3" step="1" value="5"></label>
+          <label for="ma">Max mA per LED<input type="number" id="ma" min="1" step="1" value="60"></label>
+        </div>
+        <label for="cap">Brightness limit you'll run at (%)<input type="number" id="cap" min="5" max="100" step="5" value="60"></label>
+        <label for="inject">Inject power at most every (LEDs)<input type="number" id="inject" min="10" step="10" value="150"></label>
+        <p class="hint" id="injectHint"></p>
+      </fieldset>
+
+      <fieldset id="layoutSet">
+        <legend>Wiring layout</legend>
+        <div class="row2">
+          <label for="corner">First LED at
+            <select id="corner">
+              <option value="TL">Top left</option>
+              <option value="TR">Top right</option>
+              <option value="BL" selected>Bottom left</option>
+              <option value="BR">Bottom right</option>
+            </select>
+          </label>
+          <label for="orient">Strips run
+            <select id="orient">
+              <option value="h" selected>Horizontally</option>
+              <option value="v">Vertically</option>
+            </select>
+          </label>
+        </div>
+        <label class="check" for="serp"><input type="checkbox" id="serp" checked> Serpentine (zigzag) wiring</label>
+      </fieldset>
+    </form>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="head-row"><h2>Wiring preview</h2><span class="hint" id="previewNote"></span></div>
+        <div class="preview-wrap"><canvas id="cv" width="800" height="480" aria-label="Wiring diagram of the LED grid"></canvas></div>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>LED 0 (data in)</span>
+          <span><i style="background:var(--trace)"></i>Data path</span>
+          <span><i style="background:var(--pwr)"></i>Power injection point and bus</span>
+        </div>
+      </section>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="cols">
+        <section class="panel">
+          <h2>Build list</h2>
+          <dl id="build"></dl>
+          <p class="note" id="buildNote"></p>
+        </section>
+        <section class="panel">
+          <h2>Power</h2>
+          <dl id="power"></dl>
+          <p class="note" id="powerNote"></p>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="head-row"><h2>WLED settings to enter later</h2><button type="button" class="copy" id="copyBtn">Copy</button></div>
+        <pre class="wled" id="wled"></pre>
+        <p class="note" id="wledNote">After flashing, set these under Config → LED Preferences, then Config → 2D Configuration. If effects look scrambled, the corner, orientation or serpentine setting doesn't match your build.</p>
+      </section>
+    </div>
+  </div>
+  <footer>Current figures are worst-case full white unless noted. Measure your real strip if you can; brands vary.</footer>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const ids = ["wcm","hcm","cols","rows","lenm","segs","density","rowgap","chip","volts","ma","cap","inject","corner","orient","serp"];
+  const chips = {
+    ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
+    sk6812:  { v: 5, ma: 80, name: "SK6812/WS2814 RGBW", order: "GRB", inject: 120 },
+    sk6812_12: { v: 12, ma: 20, name: "SK6812/WS2814 RGBW", order: "GRB", inject: 300 },
+    ws2815:  { v: 12, ma: 15, name: "WS281x (WS2815)", order: "GRB", inject: 400 },
+    custom:  null
+  };
+  let mode = "size";
+  let build = "matrix";
+
+  function getState() {
+    const o = { mode, build };
+    ids.forEach((k) => { const el = $(k); o[k] = el.type === "checkbox" ? el.checked : el.value; });
+    return o;
+  }
+  function applyState(saved) {
+    ids.forEach((k) => { if (saved[k] !== undefined) { const el = $(k); if (el.type === "checkbox") el.checked = !!saved[k]; else el.value = saved[k]; } });
+    if (saved.mode === "size" || saved.mode === "count") mode = saved.mode;
+    if (saved.build === "matrix" || saved.build === "strip") build = saved.build;
+  }
+
+  // restore the last session's inputs
+  try {
+    const saved = JSON.parse(localStorage.getItem("ledplanner") || "null");
+    if (saved) applyState(saved);
+  } catch (e) {}
+
+  function save() {
+    try { localStorage.setItem("ledplanner", JSON.stringify(getState())); } catch (e) {}
+  }
+
+  // ---------- saved configurations: JSON files in the configs/<app> folder next to the tools ----------
+  // Chrome and Edge write straight to the folder (File System Access API; the folder handle is kept in IndexedDB).
+  // Other browsers fall back to downloading the file and loading it with a file picker.
+  function setupConfigs(app, getState, applyState, afterLoad) {
+    const DB = "ledcalc", ST = "handles", KEY = "configsDir";
+    const el = (id) => document.getElementById(id);
+    const status = (t, bad) => { el("cfgStatus").textContent = t; el("cfgStatus").classList.toggle("warn", !!bad); };
+    const clean = (s) => (s.trim() || "untitled").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 80);
+    const fsOk = "showDirectoryPicker" in window;
+    let cfgDir = null, dir = null;
+
+    function idb(mode, fn) {
+      return new Promise((res, rej) => {
+        let rq;
+        try { rq = indexedDB.open(DB, 1); } catch (e) { return rej(e); }
+        rq.onupgradeneeded = () => rq.result.createObjectStore(ST);
+        rq.onerror = () => rej(rq.error);
+        rq.onsuccess = () => {
+          const tx = rq.result.transaction(ST, mode);
+          const r = fn(tx.objectStore(ST));
+          tx.oncomplete = () => res(r && r.result);
+          tx.onerror = () => rej(tx.error);
+        };
+      });
+    }
+
+    function file(name) {
+      return JSON.stringify({ app, version: 1, name, saved: new Date().toISOString(), state: getState() }, null, 2);
+    }
+    function apply(text) {
+      const o = JSON.parse(text);
+      if (!o || !o.state) throw new Error("not a configuration file");
+      if (o.app !== app) throw new Error("this file is for the " + o.app + " planner");
+      applyState(o.state);
+      afterLoad();
+      el("cfgName").value = o.name || "";
+      return o.name || "configuration";
+    }
+
+    // arm a button for a second click instead of a confirm() dialog
+    function armed(btn, label) {
+      if (btn.classList.contains("armed")) { clearTimeout(btn._t); btn.classList.remove("armed"); btn.textContent = btn._label; return true; }
+      btn._label = btn.textContent; btn.textContent = label; btn.classList.add("armed");
+      btn._t = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = btn._label; }, 3000);
+      return false;
+    }
+
+    async function connect(h, ask) {
+      let p = await h.queryPermission({ mode: "readwrite" });
+      if (p !== "granted" && ask) p = await h.requestPermission({ mode: "readwrite" });
+      if (p !== "granted") { cfgDir = h; dir = null; showUi(); status("Click Reconnect folder to let this page use " + h.name + " again.", false); return false; }
+      cfgDir = h;
+      dir = await h.getDirectoryHandle(app, { create: true });
+      showUi();
+      await refresh();
+      return true;
+    }
+
+    function showUi() {
+      el("cfgListRow").hidden = !dir;
+      el("cfgPick").textContent = cfgDir && !dir ? "Reconnect folder" : (dir ? "Change folder" : "Choose configs folder");
+    }
+
+    async function refresh(select) {
+      const list = el("cfgList");
+      const rows = [];
+      for await (const [n, h] of dir.entries()) {
+        if (h.kind === "file" && /\.json$/i.test(n)) { const f = await h.getFile(); rows.push([n, f.lastModified]); }
+      }
+      rows.sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
+      list.innerHTML = rows.length ? "" : "<option value=''>Nothing saved yet</option>";
+      rows.forEach(([n, t]) => {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n.replace(/\.json$/i, "") + " · " + new Date(t).toLocaleDateString();
+        list.appendChild(o);
+      });
+      if (select) list.value = select;
+      el("cfgLoad").disabled = el("cfgDel").disabled = !rows.length;
+      status(rows.length + (rows.length === 1 ? " configuration" : " configurations") + " in " + cfgDir.name + "/" + app + ".");
+    }
+
+    async function pick() {
+      try {
+        if (cfgDir && !dir) { await connect(cfgDir, true); return; }
+        const h = await window.showDirectoryPicker({ id: "ledcalc-configs", mode: "readwrite" });
+        // picked the tools folder itself? use (or make) the configs folder inside it
+        let isRoot = false;
+        for await (const [n] of h.entries()) if (/Planner\.html$/i.test(n)) { isRoot = true; break; }
+        const c = isRoot ? await h.getDirectoryHandle("configs", { create: true }) : h;
+        try { await idb("readwrite", (s) => s.put(c, KEY)); } catch (e) {}
+        await connect(c, true);
+      } catch (e) { if (e.name !== "AbortError") status("Couldn't open that folder: " + e.message, true); }
+    }
+
+    async function save() {
+      const name = el("cfgName").value.trim() || "untitled";
+      const fname = clean(name) + ".json";
+      if (!dir) {
+        if (fsOk) { status("Choose the configs folder first.", true); return; }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([file(name)], { type: "application/json" }));
+        a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        status("Downloaded " + fname + ". Move it into configs/" + app + " to keep it with the others.");
+        return;
+      }
+      try {
+        let exists = false;
+        try { await dir.getFileHandle(fname); exists = true; } catch (e) {}
+        if (exists && !armed(el("cfgSave"), "Overwrite?")) { status(fname + " already exists. Click Overwrite? to replace it.", true); return; }
+        const fh = await dir.getFileHandle(fname, { create: true });
+        const w = await fh.createWritable();
+        await w.write(file(name)); await w.close();
+        await refresh(fname);
+        status("Saved " + cfgDir.name + "/" + app + "/" + fname);
+      } catch (e) { status("Save failed: " + e.message, true); }
+    }
+
+    async function load() {
+      const fname = el("cfgList").value;
+      if (!fname || !dir) return;
+      try {
+        const f = await (await dir.getFileHandle(fname)).getFile();
+        status("Loaded " + apply(await f.text()) + ".");
+      } catch (e) { status("Couldn't load " + fname + ": " + e.message, true); }
+    }
+
+    async function del() {
+      const fname = el("cfgList").value;
+      if (!fname || !dir) return;
+      if (!armed(el("cfgDel"), "Sure?")) return;
+      try { await dir.removeEntry(fname); await refresh(); status("Deleted " + fname + "."); }
+      catch (e) { status("Delete failed: " + e.message, true); }
+    }
+
+    el("cfgSave").addEventListener("click", save);
+    el("cfgLoad").addEventListener("click", load);
+    el("cfgDel").addEventListener("click", del);
+    el("cfgList").addEventListener("dblclick", load);
+    el("cfgName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+
+    if (fsOk) {
+      el("cfgPick").addEventListener("click", pick);
+      showUi();
+      status("Choose the configs folder next to this file once. After that, saves go straight into configs/" + app + ".");
+      idb("readonly", (s) => s.get(KEY)).then((h) => { if (h) connect(h, false).catch(() => {}); }).catch(() => {});
+    } else {
+      el("cfgPick").hidden = true; el("cfgListRow").hidden = true; el("cfgOpen").hidden = false;
+      el("cfgOpen").addEventListener("click", () => el("cfgFile").click());
+      el("cfgFile").addEventListener("change", async () => {
+        const f = el("cfgFile").files[0]; el("cfgFile").value = "";
+        if (!f) return;
+        try { status("Loaded " + apply(await f.text()) + "."); } catch (e) { status("Couldn't load " + f.name + ": " + e.message, true); }
+      });
+      status("This browser can't write to folders, so Save downloads a file and Load from file opens one. Chrome or Edge can save straight into configs/" + app + ".");
+    }
+  }
+
+  function applyVis() {
+    const st = build === "strip";
+    $("buildMatrix").setAttribute("aria-pressed", !st);
+    $("buildStrip").setAttribute("aria-pressed", st);
+    $("modeSize").setAttribute("aria-pressed", mode === "size");
+    $("modeCount").setAttribute("aria-pressed", mode === "count");
+    $("modeSeg").hidden = st;
+    $("sizeInputs").hidden = st || mode !== "size";
+    $("countInputs").hidden = st || mode !== "count";
+    $("stripInputs").hidden = !st;
+    $("rowgapLabel").hidden = st;
+    $("rowgapHint").hidden = st;
+    $("layoutSet").hidden = st;
+    $("sizeLegend").textContent = st ? "Strip length" : "Grid size";
+    $("cv").setAttribute("aria-label", st ? "Diagram of the strip with power feed points" : "Wiring diagram of the LED grid");
+  }
+  function setMode(m) { mode = m; applyVis(); update(); }
+  function setBuild(b) { build = b; applyVis(); update(); }
+  $("modeSize").addEventListener("click", () => setMode("size"));
+  $("modeCount").addEventListener("click", () => setMode("count"));
+  $("buildMatrix").addEventListener("click", () => setBuild("matrix"));
+  $("buildStrip").addEventListener("click", () => setBuild("strip"));
+
+  $("chip").addEventListener("change", () => {
+    const c = chips[$("chip").value];
+    if (c) { $("volts").value = c.v; $("ma").value = c.ma; $("inject").value = c.inject; }
+    update();
+  });
+  $("density").addEventListener("change", () => {
+    $("rowgap").value = (1000 / num("density")).toFixed(1);
+    update();
+  });
+  ids.forEach((k) => $(k).addEventListener("input", update));
+
+  function num(id) { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; }
+  const fmt = (n, d = 0) => n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // order[i] = [x, y] in visual coords (x left→right, y top→bottom)
+  function buildOrder(cols, rows, corner, orient, serp) {
+    const order = [];
+    const startRight = corner === "TR" || corner === "BR";
+    const startBottom = corner === "BL" || corner === "BR";
+    if (orient === "h") {
+      for (let r = 0; r < rows; r++) {
+        const y = startBottom ? rows - 1 - r : r;
+        let ltr = !startRight;
+        if (serp && r % 2 === 1) ltr = !ltr;
+        for (let c = 0; c < cols; c++) order.push([ltr ? c : cols - 1 - c, y]);
+      }
+    } else {
+      for (let c = 0; c < cols; c++) {
+        const x = startRight ? cols - 1 - c : c;
+        let ttb = !startBottom;
+        if (serp && c % 2 === 1) ttb = !ttb;
+        for (let r = 0; r < rows; r++) order.push([x, ttb ? r : rows - 1 - r]);
+      }
+    }
+    return order;
+  }
+
+  function roundPsu(a) {
+    const steps = [1, 2, 3, 4, 5, 6, 8, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100];
+    for (const s of steps) if (s >= a) return s;
+    return Math.ceil(a / 10) * 10;
+  }
+  function awg(a) {
+    if (a <= 3) return "22 AWG";
+    if (a <= 5) return "20 AWG";
+    if (a <= 7) return "18 AWG";
+    if (a <= 10) return "16 AWG";
+    if (a <= 15) return "14 AWG";
+    return "12 AWG or split the feed";
+  }
+
+  function update() {
+    const density = num("density") || 60;
+    const pitch = 1000 / density; // mm
+    const rowgap = num("rowgap") || pitch;
+    const orient = $("orient").value;
+    $("pitchHint").textContent = "Pitch at " + density + "/m is " + fmt(pitch, 1) + " mm.";
+    if (build === "strip") return updateStrip(density);
+    $("wledNote").textContent = "After flashing, set these under Config → LED Preferences, then Config → 2D Configuration. If effects look scrambled, the corner, orientation or serpentine setting doesn't match your build.";
+
+    let cols, rows;
+    if (mode === "size") {
+      const wmm = num("wcm") * 10, hmm = num("hcm") * 10;
+      // along-strip axis uses LED pitch; across-strip axis uses row spacing
+      if (orient === "h") { cols = Math.max(1, Math.floor(wmm / pitch)); rows = Math.max(1, Math.floor(hmm / rowgap)); }
+      else { rows = Math.max(1, Math.floor(hmm / pitch)); cols = Math.max(1, Math.floor(wmm / rowgap)); }
+      $("cols").value = cols; $("rows").value = rows;
+    } else {
+      cols = Math.max(1, Math.round(num("cols"))); rows = Math.max(1, Math.round(num("rows")));
+    }
+    const total = cols * rows;
+    const runs = orient === "h" ? rows : cols;
+    const perRun = orient === "h" ? cols : rows;
+    const runLenM = perRun / density;
+    const stripM = total / density;
+    const physW = orient === "h" ? cols * pitch : cols * rowgap;
+    const physH = orient === "h" ? rows * rowgap : rows * pitch;
+    const jumpMm = orient === "h" ? rowgap : rowgap; // between adjacent runs
+    const serp = $("serp").checked;
+    const jumperLen = serp ? (runs - 1) * (jumpMm + 20) : (runs - 1) * ((orient === "h" ? physW : physH) + jumpMm + 20);
+
+    const volts = num("volts") || 5, ma = num("ma") || 60, cap = Math.min(100, Math.max(1, num("cap"))) / 100;
+    const peakA = total * ma / 1000;
+    const capA = peakA * cap;
+    const psuA = roundPsu(capA * 1.2);
+    const injectEvery = Math.max(1, Math.round(num("inject")) || 150);
+    // Keep every feed on the same edge as LED 0. Serpentine runs return to that edge every 2 runs; straight runs every run.
+    const period = serp ? 2 : 1;
+    const stepRuns = Math.max(period, Math.floor(injectEvery / perRun / period) * period);
+    const step = stepRuns * perRun;
+    const tooFar = step > injectEvery;
+    const feeds = Math.max(1, Math.ceil(total / step));
+    const perFeedA = capA / feeds;
+    const corner = $("corner").value;
+    const edge = orient === "h" ? (corner === "TR" || corner === "BR" ? "R" : "L") : (corner === "BL" || corner === "BR" ? "B" : "T");
+    const edgeName = { L: "left edge", R: "right edge", T: "top edge", B: "bottom edge" }[edge];
+    $("injectHint").textContent = tooFar
+      ? "Shortest same-edge spacing here is " + fmt(step) + " LEDs (" + stepRuns + " runs), more than you asked for."
+      : "Using every " + fmt(step) + " LEDs (" + stepRuns + (stepRuns === 1 ? " run" : " runs") + ") so every feed lands on the " + edgeName + ".";
+
+    // data timing: WS281x ~30 µs per LED + 300 µs reset
+    const fps1 = 1e6 / (total * 30 + 300);
+    const outputs = Math.max(1, Math.ceil(total / 800));
+    const fpsN = 1e6 / (Math.ceil(total / outputs) * 30 + 300);
+
+    $("stats").innerHTML =
+      stat(cols + " × " + rows, "Grid", "columns × rows") +
+      stat(fmt(total), "LEDs", fmt(runs) + " runs of " + perRun) +
+      stat(fmt(stripM, 2) + " m", "Strip", "plus spare") +
+      stat(fmt(psuA, psuA % 1 ? 1 : 0) + " A", "Power supply", volts + "V · " + fmt(psuA * volts) + " W");
+
+    $("build").innerHTML =
+      row("Finished size", fmt(physW / 10, 1) + " × " + fmt(physH / 10, 1) + " cm") +
+      row("Strip runs", fmt(runs) + " × " + fmt(runLenM * 100, 1) + " cm") +
+      row("Total strip", fmt(stripM, 2) + " m") +
+      row("Buy (≈10% spare)", fmt(Math.ceil(stripM * 1.1 * 2) / 2, 1) + " m") +
+      row("Solder joints", fmt((runs - 1) * 3) + " jumpers") +
+      row("Jumper wire", "≈ " + fmt(jumperLen / 1000, 2) + " m");
+    $("buildNote").textContent = serp
+      ? "Serpentine wiring keeps every jumper short: each run connects to the next at the same edge."
+      : "Without serpentine, every jumper has to run back across the panel. Serpentine is easier and WLED handles it.";
+
+    const pwrRows =
+      row("Worst case (full white)", fmt(peakA, 1) + " A · " + fmt(peakA * volts) + " W") +
+      row("At " + fmt(cap * 100) + "% limit", fmt(capA, 1) + " A") +
+      row("Supply with 20% headroom", fmt(psuA, psuA % 1 ? 1 : 0) + " A") +
+      row("Injection feeds", fmt(feeds) + " on the " + edgeName) +
+      row("Feed spacing", "every " + fmt(step) + " LEDs / " + stepRuns + (stepRuns === 1 ? " run" : " runs")) +
+      row("Current per feed", fmt(perFeedA, 1) + " A → " + awg(perFeedA)) +
+      row("Refresh, 1 data pin", "≈ " + fmt(Math.min(fps1, 250)) + " fps");
+    $("power").innerHTML = pwrRows + (outputs > 1 ? row("Split into " + outputs + " outputs", "≈ " + fmt(Math.min(fpsN, 250)) + " fps") : "");
+    let pn = "Set WLED's current limit to about " + fmt(Math.round(psuA * 0.85 * 1000 / 100) * 100) + " mA so it never asks for more than the supply gives.";
+    pn += " All feeds sit on the " + edgeName + ", so one power bus wire can run straight down that side.";
+    if (tooFar) pn += " Runs are long enough that the far edge may dim at high brightness; consider a lower brightness limit, shorter runs, or 12V strip.";
+    if (fps1 < 30) pn += " One data pin will feel sluggish; an ESP32 can drive several outputs.";
+    $("powerNote").textContent = pn;
+
+    const chip = chips[$("chip").value] || chips.ws2812b;
+    const cornerName = { TL: "Top-Left", TR: "Top-Right", BL: "Bottom-Left", BR: "Bottom-Right" }[$("corner").value];
+    const lines = [
+      ["h", "LED Preferences"],
+      ["Length", String(total)],
+      ["LED type", chip.name],
+      ["Color order", chip.order],
+      ["Max current", fmt(Math.round(psuA * 0.85 * 1000 / 100) * 100).replace(/,/g, "") + " mA"],
+      ["Data outputs", outputs > 1 ? outputs + " × ~" + Math.ceil(total / outputs) + " LEDs" : "1"],
+      ["h", ""],
+      ["h", "2D Configuration"],
+      ["Strip or panel", "2D Matrix"],
+      ["Panels", "1 × 1"],
+      ["Panel width", String(cols)],
+      ["Panel height", String(rows)],
+      ["1st LED", cornerName],
+      ["Orientation", orient === "h" ? "Horizontal" : "Vertical"],
+      ["Serpentine", serp ? "checked" : "unchecked"]
+    ];
+    const pre = $("wled");
+    pre.innerHTML = lines.map(([k, v]) => k === "h"
+      ? (v ? '<span class="h">' + v + "</span>" : "")
+      : '<span class="k">' + (k + ":").padEnd(16) + "</span>" + v).join("\n");
+    pre.dataset.plain = lines.map(([k, v]) => k === "h" ? v : (k + ":").padEnd(16) + v).join("\n");
+
+    draw(cols, rows, buildOrder(cols, rows, corner, orient, serp), step, physW, physH, edge);
+    save();
+  }
+
+  // ohms per metre of one copper conductor, by gauge
+  const ohmPerM = { "22 AWG": 0.053, "20 AWG": 0.033, "18 AWG": 0.021, "16 AWG": 0.013, "14 AWG": 0.0083 };
+
+  function writeWled(lines) {
+    const pre = $("wled");
+    pre.innerHTML = lines.map(([k, v]) => k === "h"
+      ? (v ? '<span class="h">' + v + "</span>" : "")
+      : '<span class="k">' + (k + ":").padEnd(16) + "</span>" + v).join("\n");
+    pre.dataset.plain = lines.map(([k, v]) => k === "h" ? v : (k + ":").padEnd(16) + v).join("\n");
+  }
+
+  function updateStrip(density) {
+    const lenM = Math.max(0.01, num("lenm"));
+    const segs = Math.max(1, Math.round(num("segs")) || 1);
+    const total = Math.max(1, Math.round(lenM * density));
+    const perSeg = total / segs;
+
+    const volts = num("volts") || 5, ma = num("ma") || 60, cap = Math.min(100, Math.max(1, num("cap"))) / 100;
+    const peakA = total * ma / 1000;
+    const capA = peakA * cap;
+    const psuA = roundPsu(capA * 1.2);
+    const limitMa = Math.round(psuA * 0.85 * 1000 / 100) * 100;
+
+    // feed points: start, every N LEDs, plus the far end if the last stretch is long
+    const step = Math.max(1, Math.round(num("inject")) || 150);
+    const pts = [];
+    for (let i = 0; i < total; i += step) pts.push(i);
+    const endFeed = total > 1 && (total - 1 - pts[pts.length - 1]) > step / 2;
+    if (endFeed) pts.push(total - 1);
+    const feeds = pts.length;
+    const perFeedA = capA / feeds;
+    const gauge = awg(perFeedA);
+    const farM = pts[pts.length - 1] / density;
+    // size the longest lead for <=3% drop (round trip), thinnest gauge that works
+    const leadDrop = (gg) => perFeedA * ohmPerM[gg] * 2 * farM;
+    let leadGauge = Object.keys(ohmPerM).find((gg) => leadDrop(gg) / volts <= 0.03 && ohmPerM[gg] <= (ohmPerM[gauge] || 1)) || "14 AWG";
+    const dropV = leadDrop(leadGauge);
+    const dropPct = dropV / volts * 100;
+
+    $("injectHint").textContent = feeds === 1
+      ? "One feed at the start covers this length."
+      : "Feeding at " + feeds + " points, every " + fmt(step) + " LEDs (" + fmt(step / density, 2) + " m)" + (endFeed ? ", plus the far end." : ".");
+
+    const fps1 = 1e6 / (total * 30 + 300);
+    const outputs = Math.max(1, Math.ceil(total / 800));
+    const fpsN = 1e6 / (Math.ceil(total / outputs) * 30 + 300);
+
+    $("stats").innerHTML =
+      stat(fmt(lenM, 2) + " m", "Length", fmt(segs) + (segs === 1 ? " piece" : " pieces")) +
+      stat(fmt(total), "LEDs", fmt(density) + " per metre") +
+      stat(fmt(feeds), "Power feeds", feeds === 1 ? "at the start" : "every " + fmt(step / density, 2) + " m") +
+      stat(fmt(psuA, psuA % 1 ? 1 : 0) + " A", "Power supply", volts + "V · " + fmt(psuA * volts) + " W");
+
+    $("build").innerHTML =
+      row("Total strip", fmt(lenM, 2) + " m") +
+      row("LEDs", fmt(total)) +
+      row("Pieces", fmt(segs) + " × " + fmt(perSeg / density * 100, 1) + " cm (~" + fmt(Math.round(perSeg)) + " LEDs)") +
+      row("Buy (≈10% spare)", fmt(Math.ceil(lenM * 1.1 * 2) / 2, 1) + " m") +
+      row("Joints between pieces", fmt(segs - 1)) +
+      row("Feed taps to solder", fmt(feeds));
+    $("buildNote").textContent = segs > 1
+      ? "Chain the pieces data-out to data-in, following the arrows on the strip. Add whatever wire the gaps between pieces need."
+      : "One continuous run. Only cut at the copper pads between LEDs.";
+
+    const pwrRows =
+      row("Worst case (full white)", fmt(peakA, 1) + " A · " + fmt(peakA * volts) + " W") +
+      row("At " + fmt(cap * 100) + "% limit", fmt(capA, 1) + " A") +
+      row("Supply with 20% headroom", fmt(psuA, psuA % 1 ? 1 : 0) + " A") +
+      row("Feed points", feeds === 1 ? "1 (start)" : fmt(feeds) + (endFeed ? " incl. far end" : "")) +
+      row("Current per feed", fmt(perFeedA, 1) + " A → " + gauge) +
+      (feeds > 1 ? row("Longest power lead", "≈ " + fmt(farM, 2) + " m") : "") +
+      (feeds > 1 ? row("Wire for that lead", leadGauge + " · " + fmt(dropV, 2) + " V drop (" + fmt(dropPct, 1) + "%)") : "") +
+      row("Refresh, 1 data pin", "≈ " + fmt(Math.min(fps1, 250)) + " fps");
+    $("power").innerHTML = pwrRows + (outputs > 1 ? row("Split into " + outputs + " outputs", "≈ " + fmt(Math.min(fpsN, 250)) + " fps") : "");
+
+    let pn = "Set WLED's current limit to about " + fmt(limitMa) + " mA so it never asks for more than the supply gives.";
+    if (feeds > 1) pn += " Run a separate lead from the supply to each feed point rather than relying on the strip's own copper.";
+    if (feeds > 1 && dropPct > 3) pn += " Even 14 AWG loses " + fmt(dropPct, 0) + "% over the longest lead. Put the supply in the middle of the run, use two supplies, or switch to 12V strip.";
+    else if (feeds > 1) pn += " Shorter leads near the supply can use thinner wire, down to " + gauge + ".";
+    if (fps1 < 30) pn += " One data pin will feel sluggish; split the run across several outputs.";
+    $("powerNote").textContent = pn;
+
+    const chip = chips[$("chip").value] || chips.ws2812b;
+    writeWled([
+      ["h", "LED Preferences"],
+      ["Length", String(total)],
+      ["LED type", chip.name],
+      ["Color order", chip.order],
+      ["Max current", String(limitMa) + " mA"],
+      ["Data outputs", outputs > 1 ? outputs + " × ~" + Math.ceil(total / outputs) + " LEDs" : "1"],
+      ["h", ""],
+      ["h", "2D Configuration"],
+      ["Strip or panel", "1D Strip (default)"]
+    ]);
+    $("wledNote").textContent = "After flashing, set these under Config → LED Preferences. A straight strip needs no 2D setup. If the first or last LEDs stay dark or flicker, check the length and color order.";
+
+    drawStrip(total, segs, pts);
+    save();
+  }
+
+  function drawStrip(total, segs, pts) {
+    const cv = $("cv");
+    const cs = getComputedStyle(document.documentElement);
+    const c = (n) => cs.getPropertyValue(n).trim();
+    const W = cv.parentElement.clientWidth || 800;
+    const H = 150;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const pad = 28, span = W - pad * 2;
+    const X = (i) => pad + (total > 1 ? i / (total - 1) : 0.5) * span;
+    const barY = 48, barH = 12;
+    const acc = c("--accent"), off = c("--dot-off");
+
+    // pieces as bars with a small gap between them
+    const perSeg = total / segs;
+    for (let s = 0; s < segs; s++) {
+      const x0 = X(s * perSeg) + (s ? 2 : 0), x1 = X(Math.min(total - 1, (s + 1) * perSeg - 1)) - (s < segs - 1 ? 2 : 0);
+      g.fillStyle = off; g.fillRect(x0, barY, Math.max(1, x1 - x0), barH);
+      const grad = g.createLinearGradient(pad, 0, pad + span, 0);
+      grad.addColorStop(0, acc); grad.addColorStop(1, "transparent");
+      g.globalAlpha = 0.85; g.fillStyle = grad; g.fillRect(x0, barY, Math.max(1, x1 - x0), barH); g.globalAlpha = 1;
+    }
+    // individual LEDs when there is room
+    if (span / total >= 5) {
+      g.fillStyle = c("--panel");
+      for (let i = 0; i < total; i++) { g.beginPath(); g.arc(X(i), barY + barH / 2, 1.3, 0, Math.PI * 2); g.fill(); }
+    }
+    // data direction
+    g.strokeStyle = c("--trace"); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(pad, barY - 12); g.lineTo(Math.min(pad + 60, W - pad), barY - 12); g.stroke();
+    g.beginPath(); g.moveTo(Math.min(pad + 60, W - pad), barY - 12); g.lineTo(Math.min(pad + 54, W - pad - 6), barY - 16); g.moveTo(Math.min(pad + 60, W - pad), barY - 12); g.lineTo(Math.min(pad + 54, W - pad - 6), barY - 8); g.stroke();
+
+    // power bus and feed taps
+    const busY = 104;
+    const pwr = c("--pwr");
+    g.strokeStyle = pwr; g.lineWidth = 2; g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(X(0), busY); g.lineTo(X(pts[pts.length - 1]), busY); g.stroke();
+    pts.forEach((p) => { g.beginPath(); g.moveTo(X(p), barY + barH + 2); g.lineTo(X(p), busY); g.stroke(); });
+    g.setLineDash([]);
+    pts.forEach((p) => { g.beginPath(); g.arc(X(p), barY + barH / 2, 8, 0, Math.PI * 2); g.stroke(); });
+
+    // labels
+    g.font = "500 11px " + c("--font-mono");
+    g.fillStyle = c("--ink");
+    const put = (t, x, y) => { const w = g.measureText(t).width; g.fillText(t, Math.min(Math.max(x - w / 2, 2), W - w - 2), y); };
+    put("0 · data in", X(0) + 30, barY - 20);
+    const density = num("density") || 60;
+    let lastX = -1e9;
+    pts.forEach((p, k) => {
+      const x = X(p);
+      const isLast = k === pts.length - 1;
+      if (x - lastX >= 46 || isLast) {
+        if (isLast && x - lastX < 46 && k > 0) return;
+        put(fmt(p / density, 1) + " m", x, busY + 16); lastX = x;
+      }
+    });
+    g.fillStyle = c("--muted");
+    put("supply", X(0), busY + 32);
+    $("previewNote").textContent = fmt(total) + " LEDs, brightest = first";
+  }
+
+  function stat(v, label, sub) { return '<div class="stat"><span>' + label + "</span><b>" + v + "</b><small>" + sub + "</small></div>"; }
+  function row(k, v) { return "<dt>" + k + "</dt><dd>" + v + "</dd>"; }
+
+  function draw(cols, rows, order, injectEvery, physW, physH, edge) {
+    const cv = $("cv");
+    const cs = getComputedStyle(document.documentElement);
+    const c = (n) => cs.getPropertyValue(n).trim();
+    const W = cv.parentElement.clientWidth || 800;
+    const dpr = window.devicePixelRatio || 1;
+    const pad = 22;
+    const aspect = physH / physW;
+    const H = Math.min(Math.max(W * aspect, 140), 560);
+    const cellW = (W - pad * 2) / cols, cellH = (H - pad * 2) / rows;
+    const cell = Math.min(cellW, cellH);
+    const gw = cell * cols, gh = cell * rows;
+    const ox = (W - gw) / 2, oy = (H - gh) / 2;
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const P = (i) => [ox + (order[i][0] + 0.5) * cell, oy + (order[i][1] + 0.5) * cell];
+    const total = order.length;
+
+    // data path
+    g.strokeStyle = c("--trace"); g.lineWidth = Math.max(1, Math.min(2.5, cell * 0.12)); g.globalAlpha = 0.75;
+    g.beginPath();
+    for (let i = 0; i < total; i++) { const [x, y] = P(i); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke(); g.globalAlpha = 1;
+
+    // LEDs: amber gradient along the chain so order is visible
+    const r = Math.max(1, cell * 0.28);
+    const acc = c("--accent"), off = c("--dot-off");
+    for (let i = 0; i < total; i++) {
+      const [x, y] = P(i);
+      g.fillStyle = off; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 0.15 + 0.75 * (1 - i / total);
+      g.fillStyle = acc; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+    }
+
+    // injection points
+    g.strokeStyle = c("--pwr"); g.lineWidth = 2;
+    const rr = Math.max(4, cell * 0.45);
+    for (let i = 0; i < total; i += injectEvery) { const [x, y] = P(i); g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.stroke(); }
+    // power bus along the injection edge
+    g.setLineDash([5, 4]); g.lineWidth = 2; g.beginPath();
+    const bx = edge === "L" ? ox - 9 : ox + gw + 9, by = edge === "T" ? oy - 3 : oy + gh + 3;
+    if (edge === "L" || edge === "R") { g.moveTo(bx, oy); g.lineTo(bx, oy + gh); }
+    else { g.moveTo(ox, by); g.lineTo(ox + gw, by); }
+    g.stroke(); g.setLineDash([]);
+
+    // LED 0 marker and labels
+    const [sx, sy] = P(0), [ex, ey] = P(total - 1);
+    g.fillStyle = acc; g.beginPath(); g.arc(sx, sy, Math.max(3, r * 1.4), 0, Math.PI * 2); g.fill();
+    g.font = "500 11px " + c("--font-mono");
+    g.fillStyle = c("--ink");
+    const lbl = (t, x, y) => {
+      const w = g.measureText(t).width;
+      const tx = Math.min(Math.max(x - w / 2, 2), W - w - 2);
+      g.fillText(t, tx, y < oy + gh / 2 ? oy - 7 : oy + gh + 15);
+    };
+    lbl("0 · data in", sx, sy);
+    lbl(String(total - 1), ex, ey);
+    $("previewNote").textContent = total > 4000 ? "Large grid: dots drawn small" : "Brightest = first LED";
+  }
+
+  $("copyBtn").addEventListener("click", () => {
+    const txt = $("wled").dataset.plain || $("wled").textContent;
+    const done = () => { $("copyBtn").textContent = "Copied"; setTimeout(() => ($("copyBtn").textContent = "Copy"), 1500); };
+    const fallback = () => { const s = window.getSelection(), rg = document.createRange(); rg.selectNodeContents($("wled")); s.removeAllRanges(); s.addRange(rg); $("copyBtn").textContent = "Selected"; };
+    try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(update, 120); });
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", update); } catch (e) {}
+  new MutationObserver(update).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  setupConfigs("matrix", getState, applyState, () => { applyVis(); update(); });
+  applyVis();
+  update();
+})();
+</script>
+</body>
+</html>

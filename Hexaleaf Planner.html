@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hexaleaf Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench — controls on the left, the hex layout editor and the numbers on the right; stacks on phones. Same tokens as LED Matrix Planner. */
+:root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --ink: #1b2230;
+  --muted: #5d6677;
+  --line: #d5dae2;
+  --accent: #c76a00;
+  --accent-soft: #fbe9d2;
+  --trace: #2f6f9f;
+  --pwr: #c2372f;
+  --dot-off: #c9cfd8;
+  --font-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
+    --accent: #ffad42; --accent-soft: #3a2a14; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
+  --accent: #ffad42; --accent-soft: #3a2a14; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px; margin: 0;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.9rem; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+h1 span { color: var(--accent); }
+header p { margin: 0; color: var(--muted); max-width: 60ch; }
+.grid { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 12px; }
+fieldset { border: 0; padding: 0; margin: 0 0 18px; display: grid; gap: 10px; min-width: 0; }
+fieldset:last-child { margin-bottom: 0; }
+legend { font-family: var(--font-display); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); padding: 0; margin-bottom: 10px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.lbl { font-size: 0.85rem; color: var(--muted); }
+input[type="number"], input[type="text"], select {
+  font: 500 0.95rem var(--font-mono); color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { font: 500 0.85rem var(--font-body); padding: 7px 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.seg.mono button { font-family: var(--font-mono); }
+.hint { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.editor { position: relative; width: 100%; overflow: hidden; touch-action: manipulation; }
+canvas { display: block; width: 100%; height: auto; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { background: var(--panel); padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font: 600 1.35rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.stat span { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stat small { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; font-size: 0.9rem; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+dt.sub { padding-top: 6px; font-family: var(--font-display); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
+dd.sub { padding-top: 6px; }
+.pgrid { display: grid; grid-template-columns: minmax(0, 1fr) 6.4em 6.4em; gap: 6px 8px; align-items: center; font-size: 0.85rem; }
+.pgrid .hd { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.pgrid span { color: var(--ink); }
+.pgrid input { padding: 5px 6px; font-size: 0.88rem; }
+details summary { cursor: pointer; font-size: 0.85rem; color: var(--ink); }
+details[open] summary { margin-bottom: 10px; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.ptable th { text-align: right; font: 500 0.75rem var(--font-body); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0 0 6px 10px; }
+.ptable th:first-child, .ptable td:first-child { text-align: left; padding-left: 0; }
+.ptable td { text-align: right; padding: 6px 0 6px 10px; border-top: 1px solid var(--line); font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ptable td:first-child { font-family: var(--font-body); color: var(--muted); white-space: normal; }
+.ptable tfoot td { font-weight: 600; color: var(--ink); border-top: 2px solid var(--line); }
+.ptable tfoot td:first-child { color: var(--ink); }
+.note { font-size: 0.85rem; color: var(--muted); margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
+.warn { color: var(--pwr); }
+
+.wled { font: 0.85rem/1.7 var(--font-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; margin: 0; max-height: 360px; overflow-y: auto; }
+.wled .k { color: var(--muted); }
+.wled .h { color: var(--accent); font-weight: 500; }
+.copy { font: 500 0.82rem var(--font-body); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.copy:hover { border-color: var(--accent); }
+.head-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.head-row h2 { margin: 0; }
+footer { font-size: 0.8rem; color: var(--muted); }
+.cfg-row { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; gap: 8px; align-items: stretch; }
+.cfg-row .copy { padding: 5px 12px; }
+.copy.armed { border-color: var(--pwr); color: var(--pwr); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Hexaleaf <span>Planner</span></h1>
+    <p>Lay out printed hex tiles, pick a depth for each, and get the print list, connectors, LED count, power and WLED segments for the build.</p>
+  </header>
+
+  <div class="grid">
+    <form class="panel" id="form" onsubmit="return false">
+      <fieldset id="cfgSet">
+        <legend>Saved configurations</legend>
+        <div class="cfg-row">
+          <input type="text" id="cfgName" placeholder="Name this setup" aria-label="Configuration name" maxlength="80">
+          <button type="button" class="copy" id="cfgSave">Save</button>
+        </div>
+        <div class="cfg-row" id="cfgListRow">
+          <select id="cfgList" aria-label="Saved configurations"></select>
+          <button type="button" class="copy" id="cfgLoad">Load</button>
+          <button type="button" class="copy" id="cfgDel">Delete</button>
+        </div>
+        <div class="btns">
+          <button type="button" class="copy" id="cfgPick">Choose configs folder</button>
+          <button type="button" class="copy" id="cfgOpen" hidden>Load from file</button>
+        </div>
+        <p class="hint" id="cfgStatus"></p>
+        <input type="file" id="cfgFile" accept=".json,application/json" hidden>
+      </fieldset>
+
+      <fieldset>
+        <legend>Edit layout</legend>
+        <div class="seg" role="group" aria-label="Editing tool">
+          <button type="button" data-tool="add" aria-pressed="true">Add / remove</button>
+          <button type="button" data-tool="paint" aria-pressed="false">Set depth</button>
+          <button type="button" data-tool="start" aria-pressed="false">Data in</button>
+        </div>
+        <span class="lbl">Depth for new or painted tiles</span>
+        <div class="seg mono" role="group" aria-label="Tile depth" id="depthSeg">
+          <button type="button" data-depth="25" aria-pressed="false">25mm</button>
+          <button type="button" data-depth="30" aria-pressed="false">30mm</button>
+          <button type="button" data-depth="35" aria-pressed="false">35mm</button>
+          <button type="button" data-depth="40" aria-pressed="true">40mm</button>
+        </div>
+        <p class="hint" id="toolHint"></p>
+        <div class="row2">
+          <label for="orient">Tiles sit
+            <select id="orient">
+              <option value="flat" selected>Flat top</option>
+              <option value="pointy">Point top</option>
+            </select>
+          </label>
+          <label for="mounts">Wall mounts per tile<input type="number" id="mounts" min="0" step="1" value="1"></label>
+        </div>
+        <div class="btns">
+          <button type="button" class="copy" id="exampleBtn">Example layout</button>
+          <button type="button" class="copy" id="clearBtn">Clear all</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Hex size</legend>
+        <div class="row2">
+          <label for="inner">Straight inner wall (mm)<input type="number" id="inner" min="10" step="0.1" value="53.7"></label>
+          <label for="outer">Outer side length (mm)<input type="number" id="outer" min="10" step="0.1" value="65.1"></label>
+        </div>
+        <div class="row2">
+          <label for="wrap">Strip goes in as
+            <select id="wrap">
+              <option value="loop" selected>One loop, bent round corners</option>
+              <option value="sides">6 pieces, cut per side</option>
+            </select>
+          </label>
+          <label for="radius" id="radiusLabel">Inner corner radius (mm)<input type="number" id="radius" min="0" step="0.5" value="7"></label>
+        </div>
+        <p class="hint">Straight inner wall: the flat part of one inside wall, between where the rounded corners start. Outer side: one outside edge, corner to corner; it only sets the finished size. <span id="perimHint"></span></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Strip type and power</legend>
+        <div class="row2">
+          <label for="density">Strip density
+            <select id="density">
+              <option value="30">30 px/m</option>
+              <option value="60" selected>60 px/m</option>
+              <option value="96">96 px/m</option>
+              <option value="144">144 px/m</option>
+            </select>
+          </label>
+          <label for="chip">LED chip
+            <select id="chip">
+              <option value="ws2812b">WS2812B (5V)</option>
+              <option value="sk6812">SK6812 (5V RGBW)</option>
+              <option value="sk6812_12">SK6812 (12V RGBW)</option>
+              <option value="ws2815">WS2815 (12V)</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+        </div>
+        <div class="row2">
+          <label for="volts">Voltage (V)<input type="number" id="volts" min="3" step="1" value="5"></label>
+          <label for="ma">Max mA per LED<input type="number" id="ma" min="1" step="1" value="60"></label>
+        </div>
+        <label for="cap">Brightness limit you'll run at (%)<input type="number" id="cap" min="5" max="100" step="5" value="60"></label>
+        <label for="inject">Inject power at most every (LEDs)<input type="number" id="inject" min="10" step="10" value="150"></label>
+        <p class="hint" id="pitchHint"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Printing</legend>
+        <div class="row2">
+          <label for="price">Filament price per kg<input type="number" id="price" min="0" step="0.5" value="20"></label>
+          <label for="spool">Spool size (g)<input type="number" id="spool" min="100" step="50" value="1000"></label>
+        </div>
+        <label for="overhead">Setup per tile or lid plate (min)<input type="number" id="overhead" min="0" step="0.5" value="6"></label>
+        <details>
+          <summary>Per-part slicer figures</summary>
+          <div class="pgrid">
+          <span class="hd">Part</span><span class="hd">Grams</span><span class="hd">Minutes</span>
+          <span>Lid</span><input type="number" id="g_lid" min="0" step="0.01" value="14.73" aria-label="Lid grams"><input type="number" id="t_lid" min="0" step="0.1" value="37.65" aria-label="Lid minutes">
+          <span>Wall 25 mm</span><input type="number" id="g_w25" min="0" step="0.01" value="41.19" aria-label="Wall 25 mm grams"><input type="number" id="t_w25" min="0" step="0.1" value="70" aria-label="Wall 25 mm minutes">
+          <span>Wall 30 mm</span><input type="number" id="g_w30" min="0" step="0.01" value="48.86" aria-label="Wall 30 mm grams"><input type="number" id="t_w30" min="0" step="0.1" value="83" aria-label="Wall 30 mm minutes">
+          <span>Wall 35 mm</span><input type="number" id="g_w35" min="0" step="0.01" value="56.53" aria-label="Wall 35 mm grams"><input type="number" id="t_w35" min="0" step="0.1" value="96" aria-label="Wall 35 mm minutes">
+          <span>Wall 40 mm</span><input type="number" id="g_w40" min="0" step="0.01" value="64.2" aria-label="Wall 40 mm grams"><input type="number" id="t_w40" min="0" step="0.1" value="109" aria-label="Wall 40 mm minutes">
+          <span>Support 1</span><input type="number" id="g_s1" min="0" step="0.01" value="6.93" aria-label="Support 1 grams"><input type="number" id="t_s1" min="0" step="0.1" value="17.7" aria-label="Support 1 minutes">
+          <span>Support 2</span><input type="number" id="g_s2" min="0" step="0.01" value="2.61" aria-label="Support 2 grams"><input type="number" id="t_s2" min="0" step="0.1" value="9.35" aria-label="Support 2 minutes">
+          <span>Support 3</span><input type="number" id="g_s3" min="0" step="0.01" value="3.25" aria-label="Support 3 grams"><input type="number" id="t_s3" min="0" step="0.1" value="10.77" aria-label="Support 3 minutes">
+          </div>
+          <p class="hint" style="margin-top:8px">From Bambu Studio's model weight and model print time for one part. Supports can share a plate, so they count model time only, with no setup.</p>
+        </details>
+      </fieldset>
+    </form>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="head-row"><h2>Layout</h2><span class="hint" id="previewNote"></span></div>
+        <div class="editor"><canvas id="cv" width="800" height="480" aria-label="Hex layout editor. Click a dashed slot to add a tile, click a tile to remove it."></canvas></div>
+        <div class="legend">
+          <span><i style="background:var(--accent)"></i>Data in (tile 1)</span>
+          <span><i style="background:var(--trace)"></i>Data path, dashed = long jump wire</span>
+          <span><i style="background:var(--pwr)"></i>Power feed</span>
+          <span>Thicker inner ring = deeper tile</span>
+        </div>
+      </section>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="cols">
+        <section class="panel">
+          <h2>Print list</h2>
+          <dl id="print"></dl>
+          <p class="note" id="printNote"></p>
+        </section>
+        <section class="panel">
+          <h2>Power</h2>
+          <dl id="power"></dl>
+          <p class="note" id="powerNote"></p>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>Filament and print time</h2>
+        <div style="overflow-x:auto"><table class="ptable" id="ptable"></table></div>
+        <p class="note" id="printTimeNote"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Strip and wiring</h2>
+        <dl id="strip"></dl>
+        <p class="note" id="stripNote"></p>
+      </section>
+
+      <section class="panel">
+        <div class="head-row"><h2>WLED settings to enter later</h2><button type="button" class="copy" id="copyBtn">Copy</button></div>
+        <pre class="wled" id="wled"></pre>
+        <p class="note">Set these under Config → LED Preferences. Leave 2D Configuration on the default 1D strip. To light tiles separately, add one segment per tile on the main page using the start and stop values above (stop is the first LED of the next tile).</p>
+      </section>
+    </div>
+  </div>
+  <footer>Current figures are worst-case full white unless noted. Measure your real strip and print if you can; brands and slicer settings vary.</footer>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const ids = ["orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const STORE = "hexplanner";
+  const chips = {
+    ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
+    sk6812:  { v: 5, ma: 80, name: "SK6812/WS2814 RGBW", order: "GRB", inject: 120 },
+    sk6812_12: { v: 12, ma: 20, name: "SK6812/WS2814 RGBW", order: "GRB", inject: 300 },
+    ws2815:  { v: 12, ma: 15, name: "WS281x (WS2815)", order: "GRB", inject: 400 },
+    custom:  null
+  };
+  const DEPTHS = [25, 30, 35, 40];
+  // flat-top axial neighbours
+  const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const EXAMPLE = [[0, 0, 40], [1, 0, 30], [1, -1, 25], [2, -1, 35], [0, 1, 35], [-1, 1, 30], [-1, 2, 25]];
+
+  let tiles = new Map(); // "q,r" -> { q, r, d }
+  let startKey = null;
+  let tool = "add";
+  let depth = 40;
+
+  const key = (q, r) => q + "," + r;
+  function loadExample() {
+    tiles = new Map();
+    EXAMPLE.forEach(([q, r, d]) => tiles.set(key(q, r), { q, r, d }));
+    startKey = key(-1, 2);
+  }
+
+  function getState() {
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })) };
+    ids.forEach((k) => { o[k] = $(k).value; });
+    return o;
+  }
+  // returns true if the state carried a tile layout
+  function applyState(saved) {
+    // v2 changed what "inner" and "outer" mean; drop size inputs saved before that
+    const old = saved.v !== 2;
+    ids.forEach((k) => { if (saved[k] !== undefined && !(old && (k === "inner" || k === "outer"))) $(k).value = saved[k]; });
+    let had = false;
+    if (Array.isArray(saved.tiles)) {
+      tiles = new Map();
+      saved.tiles.forEach((t) => { if (isFinite(t.q) && isFinite(t.r)) tiles.set(key(t.q, t.r), { q: +t.q, r: +t.r, d: DEPTHS.includes(t.d) ? t.d : 40 }); });
+      had = true;
+    }
+    startKey = saved.start && tiles.has(saved.start) ? saved.start : null;
+    if (DEPTHS.includes(saved.depth)) depth = saved.depth;
+    if (["add", "paint", "start"].includes(saved.tool)) tool = saved.tool;
+    return had;
+  }
+
+  // restore the last session's inputs and layout
+  let restored = false;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || "null");
+    if (saved) restored = applyState(saved);
+  } catch (e) {}
+  if (!restored) loadExample();
+
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(getState())); } catch (e) {}
+  }
+
+  // ---------- saved configurations: JSON files in the configs/<app> folder next to the tools ----------
+  // Chrome and Edge write straight to the folder (File System Access API; the folder handle is kept in IndexedDB).
+  // Other browsers fall back to downloading the file and loading it with a file picker.
+  function setupConfigs(app, getState, applyState, afterLoad) {
+    const DB = "ledcalc", ST = "handles", KEY = "configsDir";
+    const el = (id) => document.getElementById(id);
+    const status = (t, bad) => { el("cfgStatus").textContent = t; el("cfgStatus").classList.toggle("warn", !!bad); };
+    const clean = (s) => (s.trim() || "untitled").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 80);
+    const fsOk = "showDirectoryPicker" in window;
+    let cfgDir = null, dir = null;
+
+    function idb(mode, fn) {
+      return new Promise((res, rej) => {
+        let rq;
+        try { rq = indexedDB.open(DB, 1); } catch (e) { return rej(e); }
+        rq.onupgradeneeded = () => rq.result.createObjectStore(ST);
+        rq.onerror = () => rej(rq.error);
+        rq.onsuccess = () => {
+          const tx = rq.result.transaction(ST, mode);
+          const r = fn(tx.objectStore(ST));
+          tx.oncomplete = () => res(r && r.result);
+          tx.onerror = () => rej(tx.error);
+        };
+      });
+    }
+
+    function file(name) {
+      return JSON.stringify({ app, version: 1, name, saved: new Date().toISOString(), state: getState() }, null, 2);
+    }
+    function apply(text) {
+      const o = JSON.parse(text);
+      if (!o || !o.state) throw new Error("not a configuration file");
+      if (o.app !== app) throw new Error("this file is for the " + o.app + " planner");
+      applyState(o.state);
+      afterLoad();
+      el("cfgName").value = o.name || "";
+      return o.name || "configuration";
+    }
+
+    // arm a button for a second click instead of a confirm() dialog
+    function armed(btn, label) {
+      if (btn.classList.contains("armed")) { clearTimeout(btn._t); btn.classList.remove("armed"); btn.textContent = btn._label; return true; }
+      btn._label = btn.textContent; btn.textContent = label; btn.classList.add("armed");
+      btn._t = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = btn._label; }, 3000);
+      return false;
+    }
+
+    async function connect(h, ask) {
+      let p = await h.queryPermission({ mode: "readwrite" });
+      if (p !== "granted" && ask) p = await h.requestPermission({ mode: "readwrite" });
+      if (p !== "granted") { cfgDir = h; dir = null; showUi(); status("Click Reconnect folder to let this page use " + h.name + " again.", false); return false; }
+      cfgDir = h;
+      dir = await h.getDirectoryHandle(app, { create: true });
+      showUi();
+      await refresh();
+      return true;
+    }
+
+    function showUi() {
+      el("cfgListRow").hidden = !dir;
+      el("cfgPick").textContent = cfgDir && !dir ? "Reconnect folder" : (dir ? "Change folder" : "Choose configs folder");
+    }
+
+    async function refresh(select) {
+      const list = el("cfgList");
+      const rows = [];
+      for await (const [n, h] of dir.entries()) {
+        if (h.kind === "file" && /\.json$/i.test(n)) { const f = await h.getFile(); rows.push([n, f.lastModified]); }
+      }
+      rows.sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
+      list.innerHTML = rows.length ? "" : "<option value=''>Nothing saved yet</option>";
+      rows.forEach(([n, t]) => {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n.replace(/\.json$/i, "") + " · " + new Date(t).toLocaleDateString();
+        list.appendChild(o);
+      });
+      if (select) list.value = select;
+      el("cfgLoad").disabled = el("cfgDel").disabled = !rows.length;
+      status(rows.length + (rows.length === 1 ? " configuration" : " configurations") + " in " + cfgDir.name + "/" + app + ".");
+    }
+
+    async function pick() {
+      try {
+        if (cfgDir && !dir) { await connect(cfgDir, true); return; }
+        const h = await window.showDirectoryPicker({ id: "ledcalc-configs", mode: "readwrite" });
+        // picked the tools folder itself? use (or make) the configs folder inside it
+        let isRoot = false;
+        for await (const [n] of h.entries()) if (/Planner\.html$/i.test(n)) { isRoot = true; break; }
+        const c = isRoot ? await h.getDirectoryHandle("configs", { create: true }) : h;
+        try { await idb("readwrite", (s) => s.put(c, KEY)); } catch (e) {}
+        await connect(c, true);
+      } catch (e) { if (e.name !== "AbortError") status("Couldn't open that folder: " + e.message, true); }
+    }
+
+    async function save() {
+      const name = el("cfgName").value.trim() || "untitled";
+      const fname = clean(name) + ".json";
+      if (!dir) {
+        if (fsOk) { status("Choose the configs folder first.", true); return; }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([file(name)], { type: "application/json" }));
+        a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        status("Downloaded " + fname + ". Move it into configs/" + app + " to keep it with the others.");
+        return;
+      }
+      try {
+        let exists = false;
+        try { await dir.getFileHandle(fname); exists = true; } catch (e) {}
+        if (exists && !armed(el("cfgSave"), "Overwrite?")) { status(fname + " already exists. Click Overwrite? to replace it.", true); return; }
+        const fh = await dir.getFileHandle(fname, { create: true });
+        const w = await fh.createWritable();
+        await w.write(file(name)); await w.close();
+        await refresh(fname);
+        status("Saved " + cfgDir.name + "/" + app + "/" + fname);
+      } catch (e) { status("Save failed: " + e.message, true); }
+    }
+
+    async function load() {
+      const fname = el("cfgList").value;
+      if (!fname || !dir) return;
+      try {
+        const f = await (await dir.getFileHandle(fname)).getFile();
+        status("Loaded " + apply(await f.text()) + ".");
+      } catch (e) { status("Couldn't load " + fname + ": " + e.message, true); }
+    }
+
+    async function del() {
+      const fname = el("cfgList").value;
+      if (!fname || !dir) return;
+      if (!armed(el("cfgDel"), "Sure?")) return;
+      try { await dir.removeEntry(fname); await refresh(); status("Deleted " + fname + "."); }
+      catch (e) { status("Delete failed: " + e.message, true); }
+    }
+
+    el("cfgSave").addEventListener("click", save);
+    el("cfgLoad").addEventListener("click", load);
+    el("cfgDel").addEventListener("click", del);
+    el("cfgList").addEventListener("dblclick", load);
+    el("cfgName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+
+    if (fsOk) {
+      el("cfgPick").addEventListener("click", pick);
+      showUi();
+      status("Choose the configs folder next to this file once. After that, saves go straight into configs/" + app + ".");
+      idb("readonly", (s) => s.get(KEY)).then((h) => { if (h) connect(h, false).catch(() => {}); }).catch(() => {});
+    } else {
+      el("cfgPick").hidden = true; el("cfgListRow").hidden = true; el("cfgOpen").hidden = false;
+      el("cfgOpen").addEventListener("click", () => el("cfgFile").click());
+      el("cfgFile").addEventListener("change", async () => {
+        const f = el("cfgFile").files[0]; el("cfgFile").value = "";
+        if (!f) return;
+        try { status("Loaded " + apply(await f.text()) + "."); } catch (e) { status("Couldn't load " + f.name + ": " + e.message, true); }
+      });
+      status("This browser can't write to folders, so Save downloads a file and Load from file opens one. Chrome or Edge can save straight into configs/" + app + ".");
+    }
+  }
+
+  function hm(min) {
+    const m = Math.round(min);
+    if (m < 60) return m + "m";
+    return Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m";
+  }
+  function num(id) { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; }
+  const fmt = (n, d = 0) => n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  function stat(v, label, sub) { return '<div class="stat"><span>' + label + "</span><b>" + v + "</b><small>" + sub + "</small></div>"; }
+  function row(k, v, cls) { return "<dt" + (cls ? ' class="' + cls + '"' : "") + ">" + k + "</dt><dd" + (cls ? ' class="' + cls + '"' : "") + ">" + v + "</dd>"; }
+  function roundPsu(a) {
+    const steps = [1, 2, 3, 4, 5, 6, 8, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100];
+    for (const s of steps) if (s >= a) return s;
+    return Math.ceil(a / 10) * 10;
+  }
+  function awg(a) {
+    if (a <= 3) return "22 AWG";
+    if (a <= 5) return "20 AWG";
+    if (a <= 7) return "18 AWG";
+    if (a <= 10) return "16 AWG";
+    if (a <= 15) return "14 AWG";
+    return "12 AWG or split the feed";
+  }
+
+  // ---------- geometry (unit circumradius, flat-top; pointy = rotated 90°) ----------
+  const S3 = Math.sqrt(3);
+  function center(q, r) { return [1.5 * q, S3 * (r + q / 2)]; }
+  function rot([x, y]) { return $("orient").value === "pointy" ? [-y, x] : [x, y]; }
+  function corners(q, r, scale = 1) {
+    const [cx, cy] = center(q, r);
+    const out = [];
+    for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k; out.push([cx + Math.cos(a) * scale, cy + Math.sin(a) * scale]); }
+    return out;
+  }
+  function neighbours(t) { return DIRS.map(([dq, dr]) => key(t.q + dq, t.r + dr)).filter((k) => tiles.has(k)); }
+  function ghosts() {
+    const g = new Map();
+    if (!tiles.size) { g.set(key(0, 0), { q: 0, r: 0 }); return g; }
+    tiles.forEach((t) => DIRS.forEach(([dq, dr]) => { const k = key(t.q + dq, t.r + dr); if (!tiles.has(k)) g.set(k, { q: t.q + dq, r: t.r + dr }); }));
+    return g;
+  }
+
+  // shared edges (support 3) and 3-way corners (support 2)
+  function joints() {
+    let edges = 0;
+    tiles.forEach((t) => { for (let i = 0; i < 3; i++) if (tiles.has(key(t.q + DIRS[i][0], t.r + DIRS[i][1]))) edges++; });
+    const vc = new Map();
+    tiles.forEach((t) => corners(t.q, t.r).forEach(([x, y]) => {
+      const k = Math.round(x * 2) + ":" + Math.round(y / (S3 / 2));
+      vc.set(k, (vc.get(k) || 0) + 1);
+    }));
+    let tri = 0; vc.forEach((n) => { if (n === 3) tri++; });
+    return { edges, tri };
+  }
+
+  // ---------- data path: try a path through neighbours only, otherwise fall back with jump wires ----------
+  function dataPath() {
+    const keys = [...tiles.keys()];
+    if (!keys.length) return { order: [], jumps: [] };
+    if (!startKey || !tiles.has(startKey)) startKey = keys[0];
+    const adj = new Map(keys.map((k) => [k, neighbours(tiles.get(k))]));
+    const n = keys.length;
+    const seen = new Set([startKey]);
+    const path = [startKey];
+    let budget = 60000;
+    function dfs() {
+      if (path.length === n) return true;
+      if (--budget <= 0) return false;
+      const cur = path[path.length - 1];
+      const next = adj.get(cur).filter((k) => !seen.has(k));
+      // Warnsdorff: try the neighbour with the fewest free neighbours first
+      next.sort((a, b) => adj.get(a).filter((k) => !seen.has(k)).length - adj.get(b).filter((k) => !seen.has(k)).length);
+      for (const k of next) {
+        seen.add(k); path.push(k);
+        if (dfs()) return true;
+        seen.delete(k); path.pop();
+        if (budget <= 0) return false;
+      }
+      return false;
+    }
+    if (dfs()) return { order: path.slice(), jumps: [] };
+
+    // fallback: greedy walk, hop to the nearest unvisited tile when stuck
+    const order = [startKey], vis = new Set([startKey]), jumps = [];
+    while (order.length < n) {
+      const cur = order[order.length - 1];
+      const free = adj.get(cur).filter((k) => !vis.has(k));
+      let nxt;
+      if (free.length) {
+        free.sort((a, b) => adj.get(a).filter((k) => !vis.has(k)).length - adj.get(b).filter((k) => !vis.has(k)).length);
+        nxt = free[0];
+      } else {
+        // BFS for the closest unvisited tile
+        const q = [cur], dist = new Map([[cur, 0]]);
+        while (q.length && !nxt) {
+          const c = q.shift();
+          for (const k of adj.get(c)) if (!dist.has(k)) { dist.set(k, dist.get(c) + 1); if (!vis.has(k)) { nxt = k; break; } q.push(k); }
+        }
+        if (!nxt) { // disconnected island: nearest by distance
+          const [cx, cy] = center(tiles.get(cur).q, tiles.get(cur).r);
+          nxt = keys.filter((k) => !vis.has(k)).sort((a, b) => {
+            const pa = center(tiles.get(a).q, tiles.get(a).r), pb = center(tiles.get(b).q, tiles.get(b).r);
+            return Math.hypot(pa[0] - cx, pa[1] - cy) - Math.hypot(pb[0] - cx, pb[1] - cy);
+          })[0];
+        }
+        jumps.push(order.length); // index of the tile reached by a jump
+      }
+      vis.add(nxt); order.push(nxt);
+    }
+    return { order, jumps };
+  }
+
+  function connected() {
+    const keys = [...tiles.keys()];
+    if (keys.length < 2) return true;
+    const seen = new Set([keys[0]]), q = [keys[0]];
+    while (q.length) { const c = q.shift(); neighbours(tiles.get(c)).forEach((k) => { if (!seen.has(k)) { seen.add(k); q.push(k); } }); }
+    return seen.size === keys.length;
+  }
+
+  // ---------- UI ----------
+  function applyVis() {
+    document.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === tool));
+    document.querySelectorAll("[data-depth]").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.depth === depth));
+    $("toolHint").textContent = {
+      add: "Click a dashed slot to add a tile at the chosen depth. Click a tile to remove it.",
+      paint: "Click tiles to change them to the chosen depth.",
+      start: "Click the tile where the data wire from the controller comes in."
+    }[tool];
+  }
+  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { tool = b.dataset.tool; applyVis(); update(); }));
+  document.querySelectorAll("[data-depth]").forEach((b) => b.addEventListener("click", () => { depth = +b.dataset.depth; applyVis(); save(); }));
+  $("exampleBtn").addEventListener("click", () => { loadExample(); update(); });
+  $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; tool = "add"; applyVis(); update(); });
+  $("chip").addEventListener("change", () => {
+    const c = chips[$("chip").value];
+    if (c) { $("volts").value = c.v; $("ma").value = c.ma; $("inject").value = c.inject; }
+    update();
+  });
+  ids.forEach((k) => $(k).addEventListener("input", update));
+
+  // canvas view transform, set in draw()
+  let view = null;
+  $("cv").addEventListener("pointerdown", (ev) => {
+    if (!view) return;
+    const rc = $("cv").getBoundingClientRect();
+    const sx = ev.clientX - rc.left, sy = ev.clientY - rc.top;
+    const wx = (sx - view.ox) / view.s, wy = (sy - view.oy) / view.s;
+    const hit = (m) => { let best = null, bd = 0.87; m.forEach((t, k) => { const [x, y] = rot(center(t.q, t.r)); const d = Math.hypot(x - wx, y - wy); if (d < bd) { bd = d; best = k; } }); return best; };
+    const tk = hit(tiles);
+    if (tool === "add") {
+      if (tk) { tiles.delete(tk); if (startKey === tk) startKey = null; }
+      else { const gk = hit(ghosts()); if (gk) { const [q, r] = gk.split(",").map(Number); tiles.set(gk, { q, r, d: depth }); if (!startKey) startKey = gk; } }
+    } else if (tk && tool === "paint") tiles.get(tk).d = depth;
+    else if (tk && tool === "start") startKey = tk;
+    else return;
+    update();
+  });
+
+  function update() {
+    const n = tiles.size;
+    const density = num("density") || 60;
+    const pitch = 1000 / density;
+    const inner = Math.max(1, num("inner"));
+    const outerSide = Math.max(1, num("outer"));
+    const outer = outerSide * S3; // flat to flat
+    const loop = $("wrap").value === "loop";
+    const radius = Math.max(0, num("radius"));
+    const perim = 6 * inner + 2 * Math.PI * radius; // straight runs + six 60° arcs = one full circle
+    const perSide = Math.max(0, Math.floor(inner / pitch));
+    const perTile = loop ? Math.max(0, Math.floor(perim / pitch)) : perSide * 6;
+    const total = perTile * n;
+    $("radiusLabel").hidden = !loop;
+    $("perimHint").textContent = loop
+      ? "Loop length ≈ " + fmt(perim, 0) + " mm (6 × " + fmt(inner, 1) + " straight + corners)."
+      : "Only the straight part of each wall gets strip.";
+    $("pitchHint").textContent = "At " + density + " px/m the LED pitch is " + fmt(pitch, 1) + " mm, so " + perTile + " LEDs fit per tile" + (loop ? " in one loop" : " (" + perSide + " per side)") + ". For 12V strip that groups 3 LEDs per chip, enter pixels per metre, and remember it can only be cut every 3 LEDs.";
+
+    const { order, jumps } = dataPath();
+    const { edges, tri } = joints();
+    const mounts = Math.max(0, Math.round(num("mounts")));
+
+    // power
+    const volts = num("volts") || 5, ma = num("ma") || 60, cap = Math.min(100, Math.max(1, num("cap"))) / 100;
+    const peakA = total * ma / 1000;
+    const capA = peakA * cap;
+    const psuA = roundPsu(capA * 1.2);
+    const limitMa = Math.round(psuA * 0.85 * 1000 / 100) * 100;
+    const injectEvery = Math.max(1, Math.round(num("inject")) || 150);
+    const tilesPerFeed = perTile ? Math.max(1, Math.floor(injectEvery / perTile)) : Math.max(1, n);
+    const feedIdx = [];
+    for (let i = 0; i < n; i += tilesPerFeed) feedIdx.push(i);
+    const feeds = Math.max(1, feedIdx.length);
+    const perFeedA = n ? capA * Math.min(tilesPerFeed, n) / n : 0;
+    const tileA = perTile * ma / 1000 * cap;
+
+    // data outputs: 800 LEDs per output, keep to the controller's 4
+    const outputs = Math.max(1, Math.ceil(total / 800));
+    const fps1 = 1e6 / (total * 30 + 300);
+    const fpsN = 1e6 / (Math.ceil(total / outputs) * 30 + 300);
+
+    // finished size
+    let bw = 0, bh = 0;
+    if (n) {
+      const R = outer / S3;
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      tiles.forEach((t) => corners(t.q, t.r).forEach((p) => { const [x, y] = rot(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }));
+      bw = (x1 - x0) * R; bh = (y1 - y0) * R;
+    }
+
+    $("stats").innerHTML =
+      stat(fmt(n), "Tiles", n ? fmt(bw / 10, 0) + " × " + fmt(bh / 10, 0) + " cm" : "add some tiles") +
+      stat(fmt(total), "LEDs", perTile + " per tile") +
+      stat(fmt(total / density, 2) + " m", "Strip", "plus spare") +
+      stat(fmt(psuA, psuA % 1 ? 1 : 0) + " A", "Power supply", volts + "V · " + fmt(psuA * volts) + " W");
+
+    // print list
+    const byDepth = DEPTHS.map((d) => [d, [...tiles.values()].filter((t) => t.d === d).length]);
+    $("print").innerHTML =
+      row("Hex walls", "", "sub") +
+      byDepth.map(([d, c]) => row(d + " mm", c ? "× " + c : "—")).join("") +
+      row("Lids", "× " + n) +
+      row("Connectors", "", "sub") +
+      row("Support 3 (edge joint)", "× " + edges) +
+      row("Support 2 (3-way corner)", "× " + tri) +
+      row("Support 1 (wall mount)", "× " + n * mounts) +
+      row("Total parts", fmt(n * 2 + edges + tri + n * mounts));
+    let prn = "One edge joint for each pair of touching sides, and one 3-way corner wherever three tiles meet.";
+    if (!connected()) prn += " Some tiles don't touch the rest, so they need their own mounts and a longer data wire.";
+    $("printNote").innerHTML = prn.replace(/(Some tiles.*)$/, '<span class="warn">$1</span>');
+
+    // strip and wiring
+    const jumpers = loop ? 0 : n * 5;
+    $("strip").innerHTML =
+      (loop
+        ? row("LEDs per loop", perTile + " (" + fmt(perTile * pitch, 0) + " of ≈" + fmt(perim, 0) + " mm)")
+        : row("LEDs per side", perSide + " (" + fmt(perSide * pitch, 1) + " of " + fmt(inner, 1) + " mm)")) +
+      row("Strip per tile", fmt(perTile / density * 100, 1) + " cm · " + perTile + " LEDs") +
+      row("Total strip", fmt(total / density, 2) + " m") +
+      row("Buy (≈10% spare)", fmt(Math.ceil(total / density * 1.1 * 2) / 2, 1) + " m") +
+      row("Corner solder joints", loop ? "none · one piece per tile" : fmt(jumpers) + " (5 per tile)") +
+      row("Tile-to-tile data links", fmt(Math.max(0, n - 1)) + (jumps.length ? " · " + jumps.length + " long jump" + (jumps.length > 1 ? "s" : "") : " · all through shared edges"));
+    let sn = "Data enters each tile at one corner, runs around all six walls and leaves beside where it came in, then crosses a shared edge into the next tile in the order shown.";
+    if (loop) sn += " Bend the strip flat-side round the rounded corners; don't fold it across its width.";
+    if (jumps.length) sn += " This shape can't be visited tile to tile in one pass from the chosen start, so " + (jumps.length === 1 ? "one link needs" : jumps.length + " links need") + " a longer wire across other tiles (dashed). Try a different data-in tile, often an end tile.";
+    if (perSide === 0) sn = "The inner wall is shorter than one LED pitch at this density. Check the wall length or pick a denser strip.";
+    $("stripNote").textContent = sn;
+
+    // power
+    $("power").innerHTML =
+      row("Per tile at limit", fmt(tileA, 2) + " A") +
+      row("Worst case (full white)", fmt(peakA, 1) + " A · " + fmt(peakA * volts) + " W") +
+      row("At " + fmt(cap * 100) + "% limit", fmt(capA, 1) + " A") +
+      row("Supply with 20% headroom", fmt(psuA, psuA % 1 ? 1 : 0) + " A") +
+      row("Power feeds", fmt(n ? feeds : 0) + (n ? " · every " + tilesPerFeed + (tilesPerFeed === 1 ? " tile" : " tiles") : "")) +
+      row("Current per feed", fmt(perFeedA, 1) + " A → " + awg(perFeedA)) +
+      row("Refresh, 1 data pin", "≈ " + fmt(Math.min(fps1, 250)) + " fps") +
+      (outputs > 1 ? row("Split into " + outputs + " outputs", "≈ " + fmt(Math.min(fpsN, 250)) + " fps") : "");
+    let pn = "Set WLED's current limit to about " + fmt(limitMa) + " mA so it never asks for more than the supply gives.";
+    if (feeds > 1) pn += " Feeds land at the start of a tile (red rings), so run each one from the supply to that tile's data-in corner.";
+    if (perTile > injectEvery) pn += " One tile has more LEDs than your injection spacing; every tile gets its own feed.";
+    if (capA > 15) pn += " That's over the GLEDOPTO Elite's 15 A total, so feed every injection point straight from the supply and let the controller carry data only.";
+    else if (perFeedA > 10) pn += " The first section is over 10 A, more than one controller output carries; feed it from the supply directly.";
+    if (outputs > 4) pn += " This needs more than the controller's 4 outputs at good frame rates; accept a lower refresh or use a second controller.";
+    $("powerNote").textContent = pn;
+
+    // WLED
+    const chip = chips[$("chip").value] || chips.ws2812b;
+    const lines = [
+      ["h", "LED Preferences"],
+      ["Length", String(total)],
+      ["LED type", chip.name],
+      ["Color order", chip.order],
+      ["Max current", String(limitMa) + " mA"],
+      ["Data outputs", outputs > 1 ? outputs + " × ~" + Math.ceil(total / outputs) + " LEDs" : "1"],
+      ["h", ""],
+      ["h", "Segments (one per tile)"]
+    ];
+    order.forEach((k, i) => { const t = tiles.get(k); lines.push(["Tile " + (i + 1) + " (" + t.d + "mm)", "start " + i * perTile + "  stop " + (i + 1) * perTile]); });
+    const pre = $("wled");
+    pre.innerHTML = lines.map(([k, v]) => k === "h"
+      ? (v ? '<span class="h">' + v + "</span>" : "")
+      : '<span class="k">' + (k + ":").padEnd(18) + "</span>" + v).join("\n");
+    pre.dataset.plain = lines.map(([k, v]) => k === "h" ? v : (k + ":").padEnd(18) + v).join("\n");
+
+    // filament and print time
+    const cnt = (d) => [...tiles.values()].filter((t) => t.d === d).length;
+    const overhead = Math.max(0, num("overhead"));
+    const plan = [
+      ["Lid", "lid", n, true],
+      ["Wall 25 mm", "w25", cnt(25), true], ["Wall 30 mm", "w30", cnt(30), true],
+      ["Wall 35 mm", "w35", cnt(35), true], ["Wall 40 mm", "w40", cnt(40), true],
+      ["Support 1", "s1", n * mounts, false], ["Support 2", "s2", tri, false], ["Support 3", "s3", edges, false]
+    ].filter((p) => p[2] > 0);
+    const price = Math.max(0, num("price")), spool = Math.max(1, num("spool"));
+    let gT = 0, tT = 0, plates = 0;
+    const body = plan.map(([name, k, q, plate]) => {
+      const g = q * num("g_" + k), t = q * (num("t_" + k) + (plate ? overhead : 0));
+      gT += g; tT += t; if (plate) plates += q;
+      return "<tr><td>" + name + "</td><td>× " + q + "</td><td>" + fmt(g, 0) + " g</td><td>" + fmt(g * price / 1000, 2) + "</td><td>" + hm(t) + "</td></tr>";
+    }).join("");
+    $("ptable").innerHTML = "<thead><tr><th>Part</th><th>Qty</th><th>Filament</th><th>Cost</th><th>Time</th></tr></thead><tbody>" +
+      (body || '<tr><td colspan="5">Add tiles to see the print plan.</td></tr>') +
+      "</tbody><tfoot><tr><td>Total</td><td></td><td>" + fmt(gT, 0) + " g</td><td>" + fmt(gT * price / 1000, 2) + "</td><td>" + hm(tT) + "</td></tr></tfoot>";
+    const spools = gT / spool;
+    let ptn = "About " + fmt(gT / 3.175, 0) + " m of 1.75 mm PLA, " + fmt(spools, 2) + (spools >= 0.995 && spools < 1.005 ? " spool" : " spools") + " of " + fmt(spool) + " g (buy " + Math.max(1, Math.ceil(spools * 1.1)) + " with 10% spare for failed prints).";
+    if (n) ptn += " " + fmt(plates) + " tile and lid plates, plus the supports batched on shared plates.";
+    if (tT > 24 * 60) ptn += " That's about " + fmt(tT / 60 / 24, 1) + " days of printing back to back.";
+    $("printTimeNote").textContent = ptn;
+
+    draw(order, jumps, new Set(feedIdx.map((i) => order[i])));
+    save();
+  }
+
+  function draw(order, jumps, feedSet) {
+    const cv = $("cv");
+    const cs = getComputedStyle(document.documentElement);
+    const c = (nm) => cs.getPropertyValue(nm).trim();
+    const W = cv.parentElement.clientWidth || 800;
+    const dpr = window.devicePixelRatio || 1;
+    const showGhosts = tool === "add";
+    const gh = showGhosts ? ghosts() : new Map();
+
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    const grow = (t) => corners(t.q, t.r).forEach((p) => { const [x, y] = rot(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+    tiles.forEach(grow); gh.forEach(grow);
+    if (x0 > x1) { x0 = -1; x1 = 1; y0 = -1; y1 = 1; }
+    const pad = 14;
+    const wspan = x1 - x0, hspan = y1 - y0;
+    let s = Math.min((W - pad * 2) / wspan, 64);
+    let H = Math.max(260, Math.min(560, hspan * s + pad * 2));
+    s = Math.min(s, (H - pad * 2) / hspan);
+    const ox = (W - wspan * s) / 2 - x0 * s, oy = (H - hspan * s) / 2 - y0 * s;
+    view = { s, ox, oy };
+
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const P = (p) => { const [x, y] = rot(p); return [ox + x * s, oy + y * s]; };
+    const hexPath = (t, scale) => { g.beginPath(); corners(t.q, t.r, scale).forEach((p, i) => { const [x, y] = P(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
+
+    // ghost slots
+    g.setLineDash([4, 4]); g.lineWidth = 1; g.strokeStyle = c("--dot-off");
+    g.fillStyle = c("--muted"); g.font = "500 " + Math.round(Math.max(12, s * 0.4)) + "px " + c("--font-mono");
+    g.textAlign = "center"; g.textBaseline = "middle";
+    gh.forEach((t) => { hexPath(t, 0.94); g.stroke(); const [x, y] = P(center(t.q, t.r)); g.globalAlpha = 0.6; g.fillText("+", x, y); g.globalAlpha = 1; });
+    g.setLineDash([]);
+
+    // tiles
+    const idx = new Map(order.map((k, i) => [k, i]));
+    tiles.forEach((t, k) => {
+      hexPath(t, 0.96); g.fillStyle = c("--accent-soft"); g.fill();
+      g.strokeStyle = c("--line"); g.lineWidth = 1; g.stroke();
+      // inner LED ring, thicker for deeper tiles
+      const di = DEPTHS.indexOf(t.d);
+      hexPath(t, 0.8); g.strokeStyle = c("--accent"); g.lineWidth = Math.max(1.5, s * (0.04 + di * 0.035)); g.stroke();
+      const [x, y] = P(center(t.q, t.r));
+      g.fillStyle = c("--ink"); g.font = "600 " + Math.round(Math.max(10, s * 0.3)) + "px " + c("--font-mono");
+      g.fillText(t.d + "", x, y + s * 0.14);
+      g.fillStyle = c("--muted"); g.font = "500 " + Math.round(Math.max(9, s * 0.2)) + "px " + c("--font-mono");
+      g.fillText("#" + (idx.get(k) + 1), x, y - s * 0.24);
+    });
+
+    // data path
+    const jumpSet = new Set(jumps);
+    g.strokeStyle = c("--trace"); g.lineWidth = Math.max(1.5, s * 0.05);
+    for (let i = 1; i < order.length; i++) {
+      const a = tiles.get(order[i - 1]), b = tiles.get(order[i]);
+      const [ax, ay] = P(center(a.q, a.r)), [bx, by] = P(center(b.q, b.r));
+      g.setLineDash(jumpSet.has(i) ? [5, 4] : []);
+      // shorten so the line doesn't cover the labels
+      const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1, cut = Math.min(s * 0.42, L / 3);
+      const sx = ax + dx / L * cut, sy = ay + dy / L * cut, ex = bx - dx / L * cut, ey = by - dy / L * cut;
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(ex, ey); g.stroke();
+      g.setLineDash([]);
+      const ah = Math.max(5, s * 0.12), an = Math.atan2(dy, dx);
+      g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - ah * Math.cos(an - 0.5), ey - ah * Math.sin(an - 0.5)); g.lineTo(ex - ah * Math.cos(an + 0.5), ey - ah * Math.sin(an + 0.5)); g.closePath(); g.fillStyle = c("--trace"); g.fill();
+    }
+
+    // power feeds
+    g.strokeStyle = c("--pwr"); g.lineWidth = 2;
+    feedSet.forEach((k) => { const t = tiles.get(k); if (!t) return; hexPath(t, 0.62); g.stroke(); });
+
+    // data in
+    if (order.length) {
+      const t = tiles.get(order[0]);
+      const [x, y] = P(center(t.q, t.r));
+      g.fillStyle = c("--accent"); g.beginPath(); g.arc(x, y + s * 0.5, Math.max(4, s * 0.09), 0, Math.PI * 2); g.fill();
+    }
+    g.textAlign = "start"; g.textBaseline = "alphabetic";
+    $("previewNote").textContent = tiles.size ? "#n = data order · number = depth (mm)" : "Click the dashed slot to place the first tile";
+  }
+
+  $("copyBtn").addEventListener("click", () => {
+    const txt = $("wled").dataset.plain || $("wled").textContent;
+    const done = () => { $("copyBtn").textContent = "Copied"; setTimeout(() => ($("copyBtn").textContent = "Copy"), 1500); };
+    const fallback = () => { const sl = window.getSelection(), rg = document.createRange(); rg.selectNodeContents($("wled")); sl.removeAllRanges(); sl.addRange(rg); $("copyBtn").textContent = "Selected"; };
+    try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(update, 120); });
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", update); } catch (e) {}
+  new MutationObserver(update).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  setupConfigs("hexaleaf", getState, applyState, () => { applyVis(); update(); });
+  applyVis();
+  update();
+})();
+</script>
+</body>
+</html>
