@@ -3,3 +3,8 @@ desktop.ini
 Thumbs.db
 ~$*
 *.tmp
+
+# Saved configurations are personal; keep only the folder structure
+configs/**
+!configs/**/
+!configs/**/.gitkeep

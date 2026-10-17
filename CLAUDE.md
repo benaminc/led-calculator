@@ -4,7 +4,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
 
 ## Files
 
-- `configs/`: saved configurations, one subfolder per tool (see Conventions).
+- `configs/`: saved configurations, one subfolder per tool (see Conventions). The JSON files are git-ignored.
 
 - `LED Matrix Planner.html`: plans either a 2D strip matrix or a straight strip run. It covers LED count, strip to buy, power supply size, power injection points, wire gauge, voltage drop, a canvas wiring preview, and the values to type into WLED.
 - `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
@@ -108,4 +108,4 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 
 - The folder is a git repo on branch `main`. Commit after each change to a tool.
 - `.gitattributes` keeps text files LF. `core.autocrlf` and `core.filemode` are off for this repo, so the Windows and OneDrive sides do not show false changes.
-- Saved configs in `configs/` are committed too.
+- Saved configs in `configs/` are git-ignored. Only the folder structure is tracked, through `.gitkeep` files in `configs/`, `configs/matrix/` and `configs/hexaleaf/`.
