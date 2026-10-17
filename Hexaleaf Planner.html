@@ -104,6 +104,12 @@ details[open] summary { margin-bottom: 10px; }
 .ptable td:first-child { font-family: var(--font-body); color: var(--muted); white-space: normal; }
 .ptable tfoot td { font-weight: 600; color: var(--ink); border-top: 2px solid var(--line); }
 .ptable tfoot td:first-child { color: var(--ink); }
+.measures { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.measures ol { margin: 0 0 8px; padding-left: 1.4em; display: grid; gap: 4px; font-size: 0.9rem; }
+.measures li { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.measures li small { color: var(--muted); margin-left: 8px; }
+.measures li button { margin-left: 8px; font: 500 0.75rem var(--font-body); color: var(--muted); background: none; border: 0; cursor: pointer; padding: 0 4px; }
+.measures li button:hover { color: var(--pwr); }
 .note { font-size: 0.85rem; color: var(--muted); margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
 .warn { color: var(--pwr); }
 
@@ -155,6 +161,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <button type="button" data-tool="add" aria-pressed="true">Add / remove</button>
           <button type="button" data-tool="paint" aria-pressed="false">Set depth</button>
           <button type="button" data-tool="start" aria-pressed="false">Data in</button>
+          <button type="button" data-tool="measure" aria-pressed="false">Measure</button>
         </div>
         <span class="lbl">Depth for new or painted tiles</span>
         <div class="seg mono" role="group" aria-label="Tile depth" id="depthSeg">
@@ -262,6 +269,11 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <span><i style="background:var(--pwr)"></i>Power feed</span>
           <span>Thicker inner ring = deeper tile</span>
         </div>
+        <div class="measures" id="measureBox" hidden>
+          <div class="head-row"><h2>Measurements</h2><div class="btns"><button type="button" class="copy" id="mUndo">Undo last</button><button type="button" class="copy" id="mClear">Clear all</button></div></div>
+          <ol id="measureList"></ol>
+          <p class="hint">Outside edge to outside edge, with tiles butted together. Any gap the connectors leave between tiles adds to these numbers.</p>
+        </div>
       </section>
 
       <div class="stats" id="stats"></div>
@@ -321,6 +333,8 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let tiles = new Map(); // "q,r" -> { q, r, d }
   let startKey = null;
   let tool = "add";
+  let measures = []; // [[ax, ay], [bx, by]] in unrotated unit coords
+  let mA = null, hover = null, lastDraw = null;
   let depth = 40;
 
   const key = (q, r) => q + "," + r;
@@ -331,7 +345,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   function getState() {
-    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })) };
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => m.map((p) => p.slice())) };
     ids.forEach((k) => { o[k] = $(k).value; });
     return o;
   }
@@ -348,7 +362,10 @@ footer { font-size: 0.8rem; color: var(--muted); }
     }
     startKey = saved.start && tiles.has(saved.start) ? saved.start : null;
     if (DEPTHS.includes(saved.depth)) depth = saved.depth;
-    if (["add", "paint", "start"].includes(saved.tool)) tool = saved.tool;
+    if (["add", "paint", "start", "measure"].includes(saved.tool)) tool = saved.tool;
+    const okPt = (p) => Array.isArray(p) && p.length === 2 && p.every(isFinite);
+    measures = Array.isArray(saved.measures) ? saved.measures.filter((m) => Array.isArray(m) && m.length === 2 && m.every(okPt)).map((m) => m.map((p) => [+p[0], +p[1]])) : [];
+    mA = null;
     return had;
   }
 
@@ -648,13 +665,17 @@ footer { font-size: 0.8rem; color: var(--muted); }
     $("toolHint").textContent = {
       add: "Click a dashed slot to add a tile at the chosen depth. Click a tile to remove it.",
       paint: "Click tiles to change them to the chosen depth.",
-      start: "Click the tile where the data wire from the controller comes in."
+      start: "Click the tile where the data wire from the controller comes in.",
+      measure: "Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres. Click the first point again to cancel."
     }[tool];
   }
-  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { tool = b.dataset.tool; applyVis(); update(); }));
+  document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { tool = b.dataset.tool; mA = null; hover = null; applyVis(); update(); }));
   document.querySelectorAll("[data-depth]").forEach((b) => b.addEventListener("click", () => { depth = +b.dataset.depth; applyVis(); save(); }));
   $("exampleBtn").addEventListener("click", () => { loadExample(); update(); });
-  $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; tool = "add"; applyVis(); update(); });
+  $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; measures = []; mA = null; tool = "add"; applyVis(); update(); });
+  $("mUndo").addEventListener("click", () => { if (mA) mA = null; else measures.pop(); update(); });
+  $("mClear").addEventListener("click", () => { measures = []; mA = null; update(); });
+  $("measureList").addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) { measures.splice(+b.dataset.i, 1); update(); } });
   $("chip").addEventListener("change", () => {
     const c = chips[$("chip").value];
     if (c) { $("volts").value = c.v; $("ma").value = c.ma; $("inject").value = c.inject; }
@@ -664,8 +685,46 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
   // canvas view transform, set in draw()
   let view = null;
+  function unrot([x, y]) { return $("orient").value === "pointy" ? [y, -x] : [x, y]; }
+  function snapPoints() {
+    const pts = [];
+    tiles.forEach((t) => {
+      const cs = corners(t.q, t.r);
+      pts.push(center(t.q, t.r));
+      cs.forEach((p, i) => { const q = cs[(i + 1) % 6]; pts.push(p, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]); });
+    });
+    return pts;
+  }
+  // nearest snap point within ~16px, otherwise the free point under the pointer
+  function pickPoint(ev) {
+    const rc = $("cv").getBoundingClientRect();
+    const wx = (ev.clientX - rc.left - view.ox) / view.s, wy = (ev.clientY - rc.top - view.oy) / view.s;
+    let best = null, bd = 16 / view.s;
+    snapPoints().forEach((p) => { const [x, y] = rot(p); const d = Math.hypot(x - wx, y - wy); if (d < bd) { bd = d; best = p; } });
+    return best ? [best[0], best[1]] : unrot([wx, wy]);
+  }
+  function measureMm(a, b) {
+    const R = Math.max(1, num("outer")); // circumradius = outer side length
+    const [ax, ay] = rot(a), [bx, by] = rot(b);
+    const dx = Math.abs(bx - ax) * R, dy = Math.abs(by - ay) * R;
+    return { d: Math.hypot(dx, dy), dx, dy };
+  }
+  const mmTxt = (v) => fmt(v, 0) + " mm";
+  function redraw() { if (lastDraw) draw(...lastDraw); }
+  $("cv").addEventListener("pointermove", (ev) => { if (tool !== "measure" || !view) return; hover = pickPoint(ev); redraw(); });
+  $("cv").addEventListener("pointerleave", () => { if (hover) { hover = null; redraw(); } });
+
   $("cv").addEventListener("pointerdown", (ev) => {
     if (!view) return;
+    if (tool === "measure") {
+      const p = pickPoint(ev);
+      if (!mA) mA = p;
+      else if (Math.hypot(p[0] - mA[0], p[1] - mA[1]) < 1e-6) mA = null;
+      else { measures.push([mA, p]); mA = null; }
+      hover = p;
+      update();
+      return;
+    }
     const rc = $("cv").getBoundingClientRect();
     const sx = ev.clientX - rc.left, sy = ev.clientY - rc.top;
     const wx = (sx - view.ox) / view.s, wy = (sy - view.oy) / view.s;
@@ -831,7 +890,16 @@ footer { font-size: 0.8rem; color: var(--muted); }
     if (tT > 24 * 60) ptn += " That's about " + fmt(tT / 60 / 24, 1) + " days of printing back to back.";
     $("printTimeNote").textContent = ptn;
 
-    draw(order, jumps, new Set(feedIdx.map((i) => order[i])));
+    // measurements list
+    $("measureBox").hidden = !measures.length && tool !== "measure";
+    $("measureList").innerHTML = measures.length
+      ? measures.map((m, i) => { const r = measureMm(m[0], m[1]); return "<li>" + mmTxt(r.d) + " <small>(" + fmt(r.d / 10, 1) + " cm) · ↔ " + mmTxt(r.dx) + " · ↕ " + mmTxt(r.dy) + '</small><button type="button" data-i="' + i + '" aria-label="Remove measurement ' + (i + 1) + '">✕</button></li>'; }).join("")
+      : '<li style="list-style:none;margin-left:-1.4em" class="hint">' + (mA ? "Now click the second point." : "No measurements yet.") + "</li>";
+    $("mUndo").disabled = !measures.length && !mA;
+    $("mClear").disabled = !measures.length && !mA;
+
+    lastDraw = [order, jumps, new Set(feedIdx.map((i) => order[i]))];
+    draw(...lastDraw);
     save();
   }
 
@@ -847,6 +915,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     const grow = (t) => corners(t.q, t.r).forEach((p) => { const [x, y] = rot(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
     tiles.forEach(grow); gh.forEach(grow);
+    measures.forEach((m) => m.forEach((pt) => { const [x, y] = rot(pt); x0 = Math.min(x0, x - 0.3); x1 = Math.max(x1, x + 0.3); y0 = Math.min(y0, y - 0.3); y1 = Math.max(y1, y + 0.3); }));
     if (x0 > x1) { x0 = -1; x1 = 1; y0 = -1; y1 = 1; }
     const pad = 14;
     const wspan = x1 - x0, hspan = y1 - y0;
@@ -911,8 +980,43 @@ footer { font-size: 0.8rem; color: var(--muted); }
       const [x, y] = P(center(t.q, t.r));
       g.fillStyle = c("--accent"); g.beginPath(); g.arc(x, y + s * 0.5, Math.max(4, s * 0.09), 0, Math.PI * 2); g.fill();
     }
+    // measurements
+    const isM = tool === "measure";
+    if (isM) { g.fillStyle = c("--muted"); g.globalAlpha = 0.45; snapPoints().forEach((p) => { const [x, y] = P(p); g.beginPath(); g.arc(x, y, 1.8, 0, Math.PI * 2); g.fill(); }); g.globalAlpha = 1; }
+    const tag = (txt, x, y, strong) => {
+      g.font = (strong ? "600 12px " : "500 11px ") + c("--font-mono");
+      const w = g.measureText(txt).width + 10, h = strong ? 20 : 17;
+      const tx = Math.min(Math.max(x - w / 2, 2), W - w - 2), ty = Math.min(Math.max(y - h / 2, 2), H - h - 2);
+      g.fillStyle = c("--panel"); g.strokeStyle = strong ? c("--ink") : c("--line"); g.lineWidth = 1;
+      g.beginPath(); g.rect(tx, ty, w, h); g.fill(); g.stroke();
+      g.fillStyle = strong ? c("--ink") : c("--muted"); g.fillText(txt, tx + w / 2, ty + h / 2 + 0.5);
+    };
+    const drawMeasure = (a, b, idx, live, showLegs) => {
+      const [ax, ay] = P(a), [bx, by] = P(b);
+      const r = measureMm(a, b);
+      const legs = showLegs && r.dx > 1 && r.dy > 1;
+      if (legs) {
+        g.strokeStyle = c("--muted"); g.lineWidth = 1; g.setLineDash([3, 3]);
+        g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, ay); g.lineTo(bx, by); g.stroke(); g.setLineDash([]);
+      }
+      g.strokeStyle = c("--ink"); g.lineWidth = 1.75; g.setLineDash(live ? [6, 4] : []);
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.setLineDash([]);
+      g.fillStyle = c("--ink");
+      [[ax, ay], [bx, by]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.fill(); });
+      g.textAlign = "center"; g.textBaseline = "middle";
+      if (legs) { tag("↔ " + mmTxt(r.dx), (ax + bx) / 2, ay + (by > ay ? -11 : 11), false); tag("↕ " + mmTxt(r.dy), bx + (bx > ax ? 34 : -34), (ay + by) / 2, false); }
+      tag((idx ? idx + " · " : "") + mmTxt(r.d), (ax + bx) / 2, (ay + by) / 2, true);
+    };
+    const liveOn = isM && mA && hover && Math.hypot(hover[0] - mA[0], hover[1] - mA[1]) > 1e-6;
+    measures.forEach((m, i) => drawMeasure(m[0], m[1], i + 1, false, !liveOn && i === measures.length - 1));
+    if (isM && mA) {
+      if (hover && Math.hypot(hover[0] - mA[0], hover[1] - mA[1]) > 1e-6) drawMeasure(mA, hover, 0, true, true);
+      const [x, y] = P(mA); g.fillStyle = c("--accent"); g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill();
+    }
+    if (isM && hover) { const [x, y] = P(hover); g.strokeStyle = c("--accent"); g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.stroke(); }
+
     g.textAlign = "start"; g.textBaseline = "alphabetic";
-    $("previewNote").textContent = tiles.size ? "#n = data order · number = depth (mm)" : "Click the dashed slot to place the first tile";
+    $("previewNote").textContent = isM ? "Measuring · click two points" : (tiles.size ? "#n = data order · number = depth (mm)" : "Click the dashed slot to place the first tile");
   }
 
   $("copyBtn").addEventListener("click", () => {
