@@ -109,3 +109,4 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - The folder is a git repo on branch `main`. Commit after each change to a tool.
 - `.gitattributes` keeps text files LF. `core.autocrlf` and `core.filemode` are off for this repo, so the Windows and OneDrive sides do not show false changes.
 - Saved configs in `configs/` are git-ignored. Only the folder structure is tracked, through `.gitkeep` files in `configs/`, `configs/matrix/` and `configs/hexaleaf/`.
+- Remote: `origin` = https://github.com/benaminc/led-calculator (public). The computer has no GitHub credentials, so Claude pushes from its cloud copy: commit here, `git bundle create .git/led.bundle main`, copy the bundle to the cloud, fetch it into the clone there and push, then delete the bundle.
