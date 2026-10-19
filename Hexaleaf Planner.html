@@ -231,6 +231,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <label for="mounts">Wall mounts per tile<input type="number" id="mounts" min="0" step="1" value="1"></label>
         </div>
         <div class="btns">
+          <button type="button" class="copy" id="bestStartBtn" title="Try every tile as the data-in tile and pick the one needing the fewest, shortest jump wires">Best data-in tile</button>
           <button type="button" class="copy" id="exampleBtn">Example layout</button>
           <button type="button" class="copy" id="clearBtn">Clear all</button>
         </div>
@@ -662,61 +663,98 @@ footer { font-size: 0.8rem; color: var(--muted); }
     return { edges, tri };
   }
 
-  // ---------- data path: try a path through neighbours only, otherwise fall back with jump wires ----------
+  // ---------- data path ----------
+  // Branch-and-bound search over tile orders: fewest jump wires first, then the shortest total jump length.
+  // A jump is only taken when the chain is stuck; the bound counts unvisited regions the chain can't reach without one.
+  // Order tiles for one data chain: fewest jump wires first, then shortest total jump length.
+  // n tiles, nb[i] = neighbour indices, d(i,j) = centre distance (unit = hex circumradius).
+  function solveChain(n, nb, d, start, budget) {
+    const JUMP = 1000;
+    const vis = new Uint8Array(n), path = [start];
+    vis[start] = 1;
+    let best = null, bestCost = Infinity, nodes = 0;
+    const freeDeg = (i) => { let k = 0; for (const j of nb[i]) if (!vis[j]) k++; return k; };
+    const seen = new Uint8Array(n);
+    // every unvisited component except one touching `cur` needs at least one jump to reach
+    function jumpLB(cur) {
+      seen.fill(0);
+      let comps = 0, touch = false;
+      for (let i = 0; i < n; i++) {
+        if (vis[i] || seen[i]) continue;
+        comps++;
+        const st = [i]; seen[i] = 1; let t = false;
+        while (st.length) {
+          const x = st.pop();
+          for (const y of nb[x]) { if (y === cur) t = true; if (!vis[y] && !seen[y]) { seen[y] = 1; st.push(y); } }
+        }
+        if (t) touch = true;
+      }
+      return comps ? comps - (touch ? 1 : 0) : 0;
+    }
+    function rec(cur, cost) {
+      if (++nodes > budget) return;
+      if (path.length === n) { if (cost < bestCost) { bestCost = cost; best = path.slice(); } return; }
+      if (cost + jumpLB(cur) * JUMP >= bestCost) return;
+      let cands;
+      const free = nb[cur].filter((j) => !vis[j]);
+      if (free.length) {
+        free.sort((a, b) => freeDeg(a) - freeDeg(b)); // Warnsdorff
+        cands = free.map((j) => [j, 0]);
+      } else {
+        // stuck: jump. Try the nearest unvisited tiles, plus nearby chain ends (tiles with <=1 free neighbour)
+        const un = [];
+        for (let i = 0; i < n; i++) if (!vis[i]) un.push(i);
+        un.sort((a, b) => d(cur, a) - d(cur, b));
+        const pick = un.slice(0, 5);
+        un.filter((i) => freeDeg(i) <= 1).slice(0, 3).forEach((i) => { if (!pick.includes(i)) pick.push(i); });
+        cands = pick.map((j) => [j, JUMP + d(cur, j)]).sort((a, b) => a[1] - b[1]);
+      }
+      for (const [j, c] of cands) {
+        vis[j] = 1; path.push(j);
+        rec(j, cost + c);
+        path.pop(); vis[j] = 0;
+        if (nodes > budget) return;
+      }
+    }
+    rec(start, 0);
+    return { path: best, cost: bestCost, jumps: Math.floor(bestCost / JUMP), jumpLen: bestCost % JUMP, exhaustive: nodes <= budget };
+  }
+
+  function chainInputs() {
+    const keys = [...tiles.keys()];
+    const idx = new Map(keys.map((k, i) => [k, i]));
+    const nb = keys.map((k) => neighbours(tiles.get(k)).map((x) => idx.get(x)));
+    const pos = keys.map((k) => center(tiles.get(k).q, tiles.get(k).r));
+    const d = (i, j) => Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]);
+    return { keys, idx, nb, d };
+  }
+  let pathCache = { sig: "", res: null };
   function dataPath() {
     const keys = [...tiles.keys()];
     if (!keys.length) return { order: [], jumps: [] };
     if (!startKey || !tiles.has(startKey)) startKey = keys[0];
-    const adj = new Map(keys.map((k) => [k, neighbours(tiles.get(k))]));
+    const sig = keys.slice().sort().join(";") + "|" + startKey;
+    if (pathCache.sig === sig) return pathCache.res;
+    const { idx, nb, d } = chainInputs();
+    const r = solveChain(keys.length, nb, d, idx.get(startKey), 150000);
+    const order = r.path.map((i) => keys[i]);
+    const jumps = [];
+    for (let i = 1; i < r.path.length; i++) if (!nb[r.path[i - 1]].includes(r.path[i])) jumps.push(i); // index of the tile reached by a jump
+    pathCache = { sig, res: { order, jumps } };
+    return pathCache.res;
+  }
+  // try every tile as data-in and keep the one with the fewest, then shortest, jumps
+  function bestStart() {
+    const { keys, idx, nb, d } = chainInputs();
     const n = keys.length;
-    const seen = new Set([startKey]);
-    const path = [startKey];
-    let budget = 60000;
-    function dfs() {
-      if (path.length === n) return true;
-      if (--budget <= 0) return false;
-      const cur = path[path.length - 1];
-      const next = adj.get(cur).filter((k) => !seen.has(k));
-      // Warnsdorff: try the neighbour with the fewest free neighbours first
-      next.sort((a, b) => adj.get(a).filter((k) => !seen.has(k)).length - adj.get(b).filter((k) => !seen.has(k)).length);
-      for (const k of next) {
-        seen.add(k); path.push(k);
-        if (dfs()) return true;
-        seen.delete(k); path.pop();
-        if (budget <= 0) return false;
-      }
-      return false;
+    if (!n) return null;
+    const per = Math.max(4000, Math.floor(600000 / n));
+    let best = null;
+    for (let i = 0; i < n; i++) {
+      const r = solveChain(n, nb, d, i, per);
+      if (r.path && (!best || r.cost < best.cost - 1e-9 || (Math.abs(r.cost - best.cost) < 1e-9 && keys[i] === startKey))) best = { i, cost: r.cost, jumps: r.jumps };
     }
-    if (dfs()) return { order: path.slice(), jumps: [] };
-
-    // fallback: greedy walk, hop to the nearest unvisited tile when stuck
-    const order = [startKey], vis = new Set([startKey]), jumps = [];
-    while (order.length < n) {
-      const cur = order[order.length - 1];
-      const free = adj.get(cur).filter((k) => !vis.has(k));
-      let nxt;
-      if (free.length) {
-        free.sort((a, b) => adj.get(a).filter((k) => !vis.has(k)).length - adj.get(b).filter((k) => !vis.has(k)).length);
-        nxt = free[0];
-      } else {
-        // BFS for the closest unvisited tile
-        const q = [cur], dist = new Map([[cur, 0]]);
-        while (q.length && !nxt) {
-          const c = q.shift();
-          for (const k of adj.get(c)) if (!dist.has(k)) { dist.set(k, dist.get(c) + 1); if (!vis.has(k)) { nxt = k; break; } q.push(k); }
-        }
-        if (!nxt) { // disconnected island: nearest by distance
-          const [cx, cy] = center(tiles.get(cur).q, tiles.get(cur).r);
-          nxt = keys.filter((k) => !vis.has(k)).sort((a, b) => {
-            const pa = center(tiles.get(a).q, tiles.get(a).r), pb = center(tiles.get(b).q, tiles.get(b).r);
-            return Math.hypot(pa[0] - cx, pa[1] - cy) - Math.hypot(pb[0] - cx, pb[1] - cy);
-          })[0];
-        }
-        jumps.push(order.length); // index of the tile reached by a jump
-      }
-      vis.add(nxt); order.push(nxt);
-    }
-    return { order, jumps };
+    return best ? { key: keys[best.i], jumps: best.jumps } : null;
   }
 
   function connected() {
@@ -746,6 +784,17 @@ footer { font-size: 0.8rem; color: var(--muted); }
   document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { tool = b.dataset.tool; mA = null; hover = null; applyVis(); update(); }));
   document.querySelectorAll("[data-depth]").forEach((b) => b.addEventListener("click", () => { depth = +b.dataset.depth; applyVis(); save(); }));
   $("exampleBtn").addEventListener("click", () => { loadExample(); update(); });
+  $("bestStartBtn").addEventListener("click", () => {
+    const before = dataPath().jumps.length;
+    const b = bestStart();
+    if (!b) return;
+    startKey = b.key;
+    update();
+    const after = dataPath().jumps.length, no = dataPath().order.indexOf(b.key) + 1;
+    $("toolHint").textContent = after === 0
+      ? "Data in moved to this layout's best tile: no jump wires needed."
+      : "Data in moved to this layout's best tile. It still needs " + after + " jump wire" + (after > 1 ? "s" : "") + (after < before ? " (down from " + before + ")" : "") + "; the shape itself doesn't allow fewer.";
+  });
   $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; measures = []; mA = null; tool = "add"; applyVis(); update(); });
   $("shKind").addEventListener("change", applyVis);
   $("mShow").addEventListener("click", () => { measShow = !measShow; update(); });
@@ -983,10 +1032,14 @@ footer { font-size: 0.8rem; color: var(--muted); }
       row("Total strip", fmt(total / density, 2) + " m") +
       row("Buy (≈10% spare)", fmt(Math.ceil(total / density * 1.1 * 2) / 2, 1) + " m") +
       row("Corner solder joints", loop ? "none · one piece per tile" : fmt(jumpers) + " (5 per tile)") +
-      row("Tile-to-tile data links", fmt(Math.max(0, n - 1)) + (jumps.length ? " · " + jumps.length + " long jump" + (jumps.length > 1 ? "s" : "") : " · all through shared edges"));
+      row("Tile-to-tile data links", fmt(Math.max(0, n - 1)) + (jumps.length ? " · " + jumps.length + " jump wire" + (jumps.length > 1 ? "s" : "") : " · all through shared edges")) +
+      jumps.map((i) => {
+        const a = tiles.get(order[i - 1]), b = tiles.get(order[i]), [ax, ay] = center(a.q, a.r), [bx, by] = center(b.q, b.r);
+        return row("Jump #" + i + " → #" + (i + 1), "≈ " + fmt(Math.hypot(ax - bx, ay - by) * outerSide, 0) + " mm wire");
+      }).join("");
     let sn = "Data enters each tile at one corner, runs around all six walls and leaves beside where it came in, then crosses a shared edge into the next tile in the order shown.";
     if (loop) sn += " Bend the strip flat-side round the rounded corners; don't fold it across its width.";
-    if (jumps.length) sn += " This shape can't be visited tile to tile in one pass from the chosen start, so " + (jumps.length === 1 ? "one link needs" : jumps.length + " links need") + " a longer wire across other tiles (dashed). Try a different data-in tile, often an end tile.";
+    if (jumps.length) sn += " From this data-in tile the chain can't reach every tile through shared edges, so " + (jumps.length === 1 ? "one link needs" : jumps.length + " links need") + " a jump wire run behind the tiles (dashed; lengths are centre to centre). The order is chosen for the fewest and shortest jumps. Try Best data-in tile, which often removes them.";
     if (perSide === 0) sn = "The inner wall is shorter than one LED pitch at this density. Check the wall length or pick a denser strip.";
     $("stripNote").textContent = sn;
 
