@@ -80,11 +80,17 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - Data path (`solveChain`): a branch-and-bound search over tile orders from the data-in tile.
   - It minimises the number of jump wires first, then their total length (cost = 1000 per jump + centre-to-centre distance).
   - It steps to neighbours in Warnsdorff order and only jumps when stuck, trying the 5 nearest unvisited tiles plus up to 3 chain ends.
-  - The bound counts unvisited regions the chain can't reach without a jump. The node budget is 150k.
-  - The result is cached by the layout and start, so editing other inputs doesn't re-solve.
-  - The "Best data-in tile" button tries every tile as the start (about 600k nodes in total) and keeps the best, preferring the current start on ties.
+  - Bounds:
+    - Every unvisited region the chain can't reach needs a jump.
+    - Dead-end bound: an unvisited tile with k < 2 unvisited neighbours needs 2 − k chain ends, each further chain supplies 2, and the current chain supplies 1.
+    - When a jump is due, the nearest unvisited tile's distance is added.
+  - A memo of (current tile, visited set) skips states already reached at no higher cost.
+  - The node budget is 150k. The result is cached by the layout and start, so editing other inputs doesn't re-solve.
+  - "Best data-in tile" only tries dead-end tiles (plus the current start) when the layout has any, at up to 40k nodes each, since every chain end must sit on a dead end. Otherwise it tries every tile.
+  - `anyOrderWithin(K)` is an exact feasibility search: any start, chains may end anywhere, same bound, memoised, budget 250k. `exactMinJumps` uses it to tell the user when the jump count is the true minimum for the shape.
   - Jump wires are listed in "Strip and wiring" with centre-to-centre lengths.
-  - Over 300 random 4–33-tile layouts, the search used 40% fewer jumps than the old greedy fallback from the same start, and best-start cut jumps by 76%.
+  - BehindMonitor config (47 tiles, 8 dead ends): the old version gave 5 jumps and about 2.2 m of jump wire. The current one gives 4 jumps and about 1.0 m, and the exact search proves 4 is the minimum.
+  - Over 300 random layouts the search cut jumps by 42% from the same start and by 77% with best start.
   - The "Data path" entry in the legend is a toggle (`pathShow`, saved with the state and configs) that hides the path arrows on the canvas. The tile numbers stay.
 - Power injection lands at the start of a tile: every floor(inject spacing ÷ LEDs per tile) tiles, at least 1. Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
 - Measure tool (`tool = "measure"`):

@@ -673,6 +673,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const vis = new Uint8Array(n), path = [start];
     vis[start] = 1;
     let best = null, bestCost = Infinity, nodes = 0;
+    const memo = new Map();
     const freeDeg = (i) => { let k = 0; for (const j of nb[i]) if (!vis[j]) k++; return k; };
     const seen = new Uint8Array(n);
     // every unvisited component except one touching `cur` needs at least one jump to reach
@@ -691,10 +692,33 @@ footer { font-size: 0.8rem; color: var(--muted); }
       }
       return comps ? comps - (touch ? 1 : 0) : 0;
     }
+    // dead-end bound: an unvisited tile with k unvisited neighbours (k < 2) must be the end of k-short chains;
+    // each further chain adds two ends, the chain we're on adds one (or none when stuck)
+    function endLB(cur) {
+      let E = 0, nearCur = false, stuck = true;
+      for (let i = 0; i < n; i++) {
+        if (vis[i]) continue;
+        const k = freeDeg(i);
+        if (k < 2) E += 2 - k;
+      }
+      for (const j of nb[cur]) if (!vis[j]) { stuck = false; if (freeDeg(j) < 2) nearCur = true; }
+      if (stuck) return Math.ceil(E / 2);
+      // the next tile is entered from cur, so it needs one end fewer; our chain's own end is one more free end
+      return Math.max(0, Math.ceil((E - (nearCur ? 1 : 0) - 1) / 2));
+    }
+    function nearest(cur) { let m = Infinity; for (let i = 0; i < n; i++) if (!vis[i]) m = Math.min(m, d(cur, i)); return m; }
     function rec(cur, cost) {
       if (++nodes > budget) return;
       if (path.length === n) { if (cost < bestCost) { bestCost = cost; best = path.slice(); } return; }
-      if (cost + jumpLB(cur) * JUMP >= bestCost) return;
+      let lb = Math.max(jumpLB(cur), endLB(cur));
+      let lbCost = cost + lb * JUMP;
+      if (lb > 0 && !nb[cur].some((j) => !vis[j])) lbCost += nearest(cur); // a jump is due now: at least the nearest tile's distance
+      if (lbCost >= bestCost) return;
+      // same tiles visited and standing on the same tile, reached at least as cheaply before: nothing new down here
+      const sig = cur + ":" + vis.join("");
+      const prev = memo.get(sig);
+      if (prev !== undefined && prev <= cost) return;
+      memo.set(sig, cost);
       let cands;
       const free = nb[cur].filter((j) => !vis[j]);
       if (free.length) {
@@ -728,6 +752,60 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const d = (i, j) => Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]);
     return { keys, idx, nb, d };
   }
+  // fewest jumps any single chain could need: every dead-end tile is a chain end, every separate group its own chain
+  function minJumps(fromKey) {
+    const { keys, idx, nb } = chainInputs();
+    if (!keys.length) return { any: 0, here: 0, ends: 0 };
+    let E = 0, ends = 0;
+    nb.forEach((x) => { if (x.length < 2) E += 2 - x.length; if (x.length === 1) ends++; });
+    const seen = new Uint8Array(keys.length); let comps = 0;
+    for (let i = 0; i < keys.length; i++) if (!seen[i]) { comps++; const st = [i]; seen[i] = 1; while (st.length) { const v = st.pop(); for (const w of nb[v]) if (!seen[w]) { seen[w] = 1; st.push(w); } } }
+    const startDead = fromKey && nb[idx.get(fromKey)] && nb[idx.get(fromKey)].length <= 1;
+    return { any: Math.max(comps, Math.ceil(E / 2)) - 1, here: Math.max(comps, Math.ceil((E + (startDead || E === 0 ? 0 : 1)) / 2)) - 1, ends };
+  }
+  // exact check: can ANY order (any data-in tile, chains may end anywhere) get by with <= K jumps?
+  // returns true / false, or null if it ran out of budget
+  function anyOrderWithin(K, budget) {
+    const { keys, nb } = chainInputs();
+    const n = keys.length, vis = new Uint8Array(n), memo = new Set();
+    let nodes = 0, out = false;
+    const fd = (i) => { let k = 0; for (const j of nb[i]) if (!vis[j]) k++; return k; };
+    const ends = () => { let e = 0; for (let i = 0; i < n; i++) if (!vis[i]) { const k = fd(i); if (k < 2) e += 2 - k; } return e; };
+    function go(cur, count, left) {
+      if (++nodes > budget) { out = true; return false; }
+      if (count === n) return true;
+      const e = ends();
+      if (cur < 0 ? Math.ceil(e / 2) > left + 1 : Math.max(0, Math.ceil((e - 2) / 2)) > left) return false;
+      const sig = cur + "|" + left + "|" + vis.join("");
+      if (memo.has(sig)) return false;
+      memo.add(sig);
+      if (cur >= 0) {
+        for (const j of nb[cur]) if (!vis[j]) { vis[j] = 1; if (go(j, count + 1, left)) return true; vis[j] = 0; if (out) return false; }
+        return left > 0 && go(-1, count, left - 1);
+      }
+      let cands = [];
+      for (let i = 0; i < n; i++) if (!vis[i] && fd(i) <= 1) cands.push(i);
+      if (!cands.length) for (let i = 0; i < n; i++) if (!vis[i]) cands.push(i);
+      for (const i of cands) { vis[i] = 1; if (go(i, count + 1, left)) return true; vis[i] = 0; if (out) return false; }
+      return false;
+    }
+    const ok = go(-1, 0, K);
+    return out ? null : ok;
+  }
+  // the true minimum number of jumps for this layout, searched from the dead-end estimate up to `upTo`
+  let minCache = { sig: "", val: null };
+  function exactMinJumps(upTo) {
+    const sig = [...tiles.keys()].sort().join(";") + "|" + upTo;
+    if (minCache.sig === sig) return minCache.val;
+    let val = { min: null, proven: false };
+    for (let K = Math.max(0, minJumps(null).any); K <= upTo; K++) {
+      const r = anyOrderWithin(K, 250000);
+      if (r === null) { val = { min: K, proven: false }; break; } // unknown: at least K
+      if (r) { val = { min: K, proven: true }; break; }
+    }
+    minCache = { sig, val };
+    return val;
+  }
   let pathCache = { sig: "", res: null };
   function dataPath() {
     const keys = [...tiles.keys()];
@@ -748,9 +826,13 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const { keys, idx, nb, d } = chainInputs();
     const n = keys.length;
     if (!n) return null;
-    const per = Math.max(4000, Math.floor(600000 / n));
+    // a chain has to start or end at every dead-end tile, so when there are any, starting at one is never worse
+    let cand = [...Array(n).keys()].filter((i) => nb[i].length <= 1);
+    if (cand.length) { if (!cand.includes(idx.get(startKey))) cand.push(idx.get(startKey)); }
+    else cand = [...Array(n).keys()];
+    const per = Math.max(4000, Math.min(40000, Math.floor(800000 / cand.length)));
     let best = null;
-    for (let i = 0; i < n; i++) {
+    for (const i of cand) {
       const r = solveChain(n, nb, d, i, per);
       if (r.path && (!best || r.cost < best.cost - 1e-9 || (Math.abs(r.cost - best.cost) < 1e-9 && keys[i] === startKey))) best = { i, cost: r.cost, jumps: r.jumps };
     }
@@ -791,9 +873,11 @@ footer { font-size: 0.8rem; color: var(--muted); }
     startKey = b.key;
     update();
     const after = dataPath().jumps.length, no = dataPath().order.indexOf(b.key) + 1;
+    const ex = after ? exactMinJumps(after) : { min: 0, proven: true };
     $("toolHint").textContent = after === 0
       ? "Data in moved to this layout's best tile: no jump wires needed."
-      : "Data in moved to this layout's best tile. It still needs " + after + " jump wire" + (after > 1 ? "s" : "") + (after < before ? " (down from " + before + ")" : "") + "; the shape itself doesn't allow fewer.";
+      : "Data in moved to this layout's best tile. It needs " + after + " jump wire" + (after > 1 ? "s" : "") + (after < before ? " (down from " + before + ")" : "") +
+        (ex.proven && ex.min >= after ? ", the fewest this shape allows." : ".");
   });
   $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; measures = []; mA = null; tool = "add"; applyVis(); update(); });
   $("shKind").addEventListener("change", applyVis);
@@ -1039,7 +1123,16 @@ footer { font-size: 0.8rem; color: var(--muted); }
       }).join("");
     let sn = "Data enters each tile at one corner, runs around all six walls and leaves beside where it came in, then crosses a shared edge into the next tile in the order shown.";
     if (loop) sn += " Bend the strip flat-side round the rounded corners; don't fold it across its width.";
-    if (jumps.length) sn += " From this data-in tile the chain can't reach every tile through shared edges, so " + (jumps.length === 1 ? "one link needs" : jumps.length + " links need") + " a jump wire run behind the tiles (dashed; lengths are centre to centre). The order is chosen for the fewest and shortest jumps. Try Best data-in tile, which often removes them.";
+    if (jumps.length) {
+      const mj = minJumps(startKey);
+      sn += " " + (jumps.length === 1 ? "One link needs" : jumps.length + " links need") + " a jump wire run behind the tiles (dashed; lengths are centre to centre).";
+      const ex = exactMinJumps(jumps.length);
+      if (mj.ends > 2) sn += " This shape has " + mj.ends + " dead-end tiles, and every one has to start or end a chain.";
+      if (ex.proven && ex.min >= jumps.length) sn += " " + jumps.length + " is the fewest any order can manage for this shape, from any data-in tile.";
+      else if (ex.proven) sn += " The shape can be done with " + ex.min + "; press Best data-in tile.";
+      else sn += " At least " + ex.min + " are unavoidable; Best data-in tile may get closer.";
+      sn += " Each extra controller output you give a chain of its own removes one jump.";
+    }
     if (perSide === 0) sn = "The inner wall is shorter than one LED pitch at this density. Check the wall length or pick a denser strip.";
     $("stripNote").textContent = sn;
 
