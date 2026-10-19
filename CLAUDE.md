@@ -88,7 +88,7 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - When a measurement's `legs` flag is on, it draws the full dashed rectangle, so both right triangles show. Both horizontals are labelled ↔ and both verticals ↕, with right-angle marks at the two corners off the hypotenuse. The sidebar row also shows the angle from level.
   - A Measurements sidebar sits to the right of the canvas (below it under 1100 px). Each row has a Legs toggle and a ✕.
   - Below the list are "All legs on/off", Undo last and Clear all. A Shown/Hidden toggle in the header (`measShow`, saved) hides every measurement on the canvas.
-  - Hovering or focusing a row highlights that measurement on the canvas (`mHi`) with its legs, even while all are hidden.
+  - Hovering or focusing a row highlights that measurement on the canvas (`mHi`) with its legs, even while all are hidden. Highlights use the violet `--hl` / `--hl-soft` tokens, never the amber `--accent`, so they stand out from the tiles. The same goes for the pending point, the snap cursor and highlighted shapes.
 - Shapes tool (`tool = "shape"`): custom obstacles such as a wall plug.
   - Each shape is `{ name, kind: "rect" | "circle", w, h, x, y }` in mm, where x, y is the centre in screen orientation measured from tile (0,0)'s centre. They are stored as `shapes` and saved with the state and configs.
   - The form (`shName`, `shKind`, `shW`, `shH`) sets the next shape. It defaults to a 70 × 115 mm wall plug, a North American single-gang cover plate.
