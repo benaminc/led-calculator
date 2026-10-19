@@ -111,6 +111,13 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - Voltage-drop model (`feedPlan`): +V and ground run as separate wires between consecutive tiles in data order (not through each tile's strip). The gauge comes from `linkAwg` (default 18 AWG; `linkOhm` per conductor × 2 for the round trip). Link length is the centre-to-centre distance, jump wires included, and each tile draws its current at the brightness limit. It reports the worst drop, which tile it lands on, and the most current on any one feed.
   - The Power panel table compares the minimum feed count up to minimum + 3. Ratings: under 3% good, under 6% fine, under 10% slight dimming, otherwise visible dimming. Feed leads from the supply aren't modelled.
   - Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
+- Wire and connectors panel (after Strip and wiring):
+  - The supply and controller sit together at `supplyRef` (state, saved as `supplyRef`): behind tile #1 (`t1`, default) or any shape's centre (`s<i>`). `supplyExtra` (m, default 0.5) adds the run to get there, e.g. down behind a monitor.
+  - Tile-to-tile links: n − 1 of them, each 2 × `pigtail` (mm each side of the connector, default 100). Jumps add their centre-to-centre length. Every link carries +V and GND at `linkAwg`, plus data at 22 AWG and, for WS2815 only, backup data.
+  - Feed leads: feed 1 is the controller lead to tile #1 (+V, GND, data). Each other feed is a +V/GND pair from the supply to its feed tile. Length = straight line from the supply point + `supplyExtra` + one pigtail. Gauge = `awg()` of that section's current at the brightness limit, never thinner than `linkAwg`.
+  - Buy totals are grouped by gauge and wire (+V, GND, Data, Backup), with `wireSpare` % (default 15) added and rounded up to whole metres.
+  - Connectors: one 4-pin pair per link plus the controller lead (3-pin for chips without backup data), a 2-pin pair per extra feed, and one inline fuse per feed (the next standard size ≥ 1.25 × section current). It also counts solder joints and the most current through any link. It warns above about 3 A per JST-SM pin, and when 16 or 14 AWG links won't fit JST-SM crimps.
+  - The Copy button copies the runs, buy list and connector counts as plain text.
 - Measure tool (`tool = "measure"`):
   - Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres within about 16 px; anywhere else gives a free point.
   - It reports the straight-line distance plus its horizontal (↔) and vertical (↕) parts in mm, in screen orientation, so point-top layouts swap them.

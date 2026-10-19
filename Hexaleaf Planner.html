@@ -486,6 +486,23 @@ footer { font-size: 0.8rem; color: var(--muted); }
       </section>
 
       <section class="panel">
+        <div class="head-row"><h2>Wire and connectors</h2><button type="button" class="copy" id="wireCopy">Copy</button></div>
+        <div class="row2" style="margin-bottom:8px">
+          <label for="supplyRef">Supply and controller sit at
+            <select id="supplyRef"></select>
+          </label>
+          <label for="supplyExtra">Plus run to get there (m)<input type="number" id="supplyExtra" min="0" step="0.1" value="0.5"></label>
+        </div>
+        <div class="row2" style="margin-bottom:12px">
+          <label for="pigtail">Lead each side of a connector (mm)<input type="number" id="pigtail" min="0" step="10" value="100"></label>
+          <label for="wireSpare">Spare (%)<input type="number" id="wireSpare" min="0" step="5" value="15"></label>
+        </div>
+        <div style="overflow-x:auto"><table class="ptable" id="wireTable"></table></div>
+        <dl id="wireBuy" style="margin-top:12px"></dl>
+        <p class="note" id="wireNote"></p>
+      </section>
+
+      <section class="panel">
         <div class="head-row"><h2>WLED settings to enter later</h2><button type="button" class="copy" id="copyBtn">Copy</button></div>
         <pre class="wled" id="wled"></pre>
         <p class="note">Set these under Config → LED Preferences. Leave 2D Configuration on the default 1D strip. To light tiles separately, add one segment per tile on the main page using the start and stop values above (stop is the first LED of the next tile).</p>
@@ -498,7 +515,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mountReach","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","feedCount","linkAwg","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mountReach","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","feedCount","linkAwg","supplyExtra","pigtail","wireSpare","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
   const STORE = "hexplanner";
   const chips = {
     ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
@@ -518,7 +535,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let measures = []; // { a: [x, y], b: [x, y], legs } in unrotated unit coords
   let shapes = [];   // { name, kind: "rect" | "circle", w, h, x, y } in mm; x, y = centre in screen orientation, from tile 0's centre
   let mA = null, hover = null, lastDraw = null, mHi = -1, sHi = -1, drag = null, measShow = true, pathShow = true;
-  let mountAuto = true, mountKeys = [], mountShow = true, mountRefSel = "tl"; // mountKeys = 3-way corner keys
+  let mountAuto = true, mountKeys = [], mountShow = true, mountRefSel = "tl", supplyRefSel = "t1"; // mountKeys = 3-way corner keys
   let mountOrder = [], unreachedSet = new Set();
   let depth = 40;
 
@@ -530,7 +547,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   function getState() {
-    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow, mountAuto, mountKeys: mountKeys.slice(), mountShow, mountRef: mountRefSel };
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow, mountAuto, mountKeys: mountKeys.slice(), mountShow, mountRef: mountRefSel, supplyRef: supplyRefSel };
     ids.forEach((k) => { const el = $(k); o[k] = el.type === "checkbox" ? el.checked : el.value; });
     return o;
   }
@@ -559,6 +576,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     mountKeys = Array.isArray(saved.mountKeys) ? saved.mountKeys.filter((k) => typeof k === "string") : [];
     mountShow = saved.mountShow !== false;
     mountRefSel = typeof saved.mountRef === "string" ? saved.mountRef : "tl";
+    supplyRefSel = typeof saved.supplyRef === "string" ? saved.supplyRef : "t1";
     shapes = Array.isArray(saved.shapes) ? saved.shapes.filter((x) => x && isFinite(x.x) && isFinite(x.y) && +x.w > 0)
       .map((x) => ({ name: String(x.name || "Shape").slice(0, 40), kind: x.kind === "circle" ? "circle" : "rect", w: +x.w, h: +(x.h || x.w), x: +x.x, y: +x.y })) : [];
     mA = null;
@@ -1103,9 +1121,16 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("feedCount").addEventListener("change", update); // snap back up to the minimum when the box loses focus
   $("mountAutoBtn").addEventListener("click", () => { mountAuto = true; update(); });
   $("mountRef").addEventListener("change", () => { mountRefSel = $("mountRef").value; update(); });
+  $("supplyRef").addEventListener("change", () => { supplyRefSel = $("supplyRef").value; update(); });
   $("mountCopy").addEventListener("click", () => {
     const txt = $("mountTable").dataset.plain || "";
     const b = $("mountCopy");
+    const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); };
+    try { navigator.clipboard.writeText(txt).then(done, () => {}); } catch (e) {}
+  });
+  $("wireCopy").addEventListener("click", () => {
+    const txt = $("wireBuy").dataset.plain || "";
+    const b = $("wireCopy");
     const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); };
     try { navigator.clipboard.writeText(txt).then(done, () => {}); } catch (e) {}
   });
@@ -1515,6 +1540,71 @@ footer { font-size: 0.8rem; color: var(--muted); }
       if (!mountAuto) mn += " You've placed these by hand; Auto-place puts them back automatically.";
       $("mountNote").textContent = mn;
       $("mountShow").setAttribute("aria-pressed", mountShow);
+    }
+
+    // wire and connectors
+    {
+      const R = outerSide, esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+      const tmm = (k) => { const t = tiles.get(k); return rot(center(t.q, t.r)).map((x) => x * R); };
+      const refsW = [["t1", "Behind tile #1 (data in)"]].concat(shapes.map((sh, i) => ["s" + i, sh.name + " (centre)"]));
+      if (!refsW.some((r) => r[0] === supplyRefSel)) supplyRefSel = "t1";
+      $("supplyRef").innerHTML = refsW.map((r) => '<option value="' + r[0] + '"' + (r[0] === supplyRefSel ? " selected" : "") + ">" + esc(r[1]) + "</option>").join("");
+      const sh = supplyRefSel[0] === "s" ? shapes[+supplyRefSel.slice(1)] : null;
+      const sp = sh ? [sh.x, sh.y] : (n ? tmm(order[0]) : [0, 0]);
+      const extra = Math.max(0, num("supplyExtra")), pig = Math.max(0, num("pigtail")) / 1000, spare = Math.max(0, num("wireSpare")) / 100;
+      const backup = $("chip").value === "ws2815", pins = backup ? 4 : 3;
+      const linkG = $("linkAwg").value, dataG = "22 AWG";
+      // feed leads: sized for their section, never thinner than the links
+      const feedG = (a) => { const g = awg(a); return parseInt(g) < parseInt(linkG) ? g : linkG; };
+      const dataRoles = backup ? ["Data", "Backup"] : ["Data"];
+      const runs = []; // { name, wires: [[gauge, role]], m } — m is the length of each wire in the run
+      const st = fplan.st, secA = st.map((a, si) => ((si + 1 < st.length ? st[si + 1] : n) - a) * tileA);
+      if (n > 1) {
+        const jm = jumps.reduce((s, i) => s + linkM[i], 0);
+        const linkTotal = (n - 1) * 2 * pig + jm;
+        runs.push({ name: (n - 1) + " tile-to-tile links" + (jumps.length ? " (" + jumps.length + " jump" + (jumps.length > 1 ? "s" : "") + " ≈ " + fmt(jm, 2) + " m)" : ""), wires: [[linkG, "+V"], [linkG, "GND"]].concat(dataRoles.map((r) => [dataG, r])), m: linkTotal });
+      }
+      const fromSupply = (i) => Math.hypot(...tmm(order[st[i]]).map((v, j) => v - sp[j])) / 1000 + extra + pig;
+      if (n) {
+        const g0 = feedG(secA[0]);
+        runs.push({ name: "Controller → tile #1 (feed 1, " + fmt(secA[0], 1) + " A)", wires: [[g0, "+V"], [g0, "GND"], [dataG, "Data"]], m: fromSupply(0) });
+        for (let i = 1; i < st.length; i++) {
+          const g = feedG(secA[i]);
+          runs.push({ name: "Feed " + (i + 1) + " → tile #" + (st[i] + 1) + " (" + fmt(secA[i], 1) + " A)", wires: [[g, "+V"], [g, "GND"]], m: fromSupply(i) });
+        }
+      }
+      // totals by gauge, then by wire
+      const tot = new Map();
+      runs.forEach((r) => r.wires.forEach(([g, role]) => { if (!tot.has(g)) tot.set(g, new Map()); const m = tot.get(g); m.set(role, (m.get(role) || 0) + r.m); }));
+      const gs = [...tot.keys()].sort((a, b) => parseInt(a) - parseInt(b));
+      const ROLE = ["+V", "GND", "Data", "Backup"];
+      tot.forEach((m, g) => tot.set(g, new Map([...m].sort((a, b) => ROLE.indexOf(a[0]) - ROLE.indexOf(b[0])))));
+      const buy = (m) => Math.max(1, Math.ceil(m * (1 + spare) - 1e-9));
+      const wtxt = (r) => { const by = new Map(); r.wires.forEach(([g, role]) => by.set(g, (by.get(g) || []).concat(role))); return [...by].map(([g, rs]) => g + " " + rs.join("/")); };
+      $("wireTable").innerHTML = "<thead><tr><th>Run</th><th>Wires</th><th>Each wire</th></tr></thead><tbody>" +
+        (runs.length ? runs.map((r) => "<tr><td>" + r.name + "</td><td>" + wtxt(r).join("<br>") + "</td><td>" + fmt(r.m, 2) + " m</td></tr>").join("") : '<tr><td colspan="3">Add tiles to see the wire list.</td></tr>') + "</tbody>";
+      const maxLinkA = st.reduce((m, a, si) => Math.max(m, ((si + 1 < st.length ? st[si + 1] : n) - a - 1) * tileA), 0);
+      const maxFeedA = Math.max(0, ...secA);
+      const fuseA = (a) => [1, 2, 3, 5, 7.5, 10, 15, 20, 25, 30].find((f) => f >= a * 1.25) || 30;
+      const solder = n * pins * 2 + Math.max(0, st.length - 1) * 2;
+      $("wireBuy").innerHTML = row("Buy, with " + fmt(spare * 100) + "% spare", "", "sub") +
+        gs.map((g) => row(g, [...tot.get(g)].map(([role, m]) => role + " " + buy(m) + " m").join(" · "))).join("") +
+        row("Connectors", "", "sub") +
+        (n ? row(pins + "-pin pairs (JST-SM)", "× " + n + (n > 1 ? " · " + (n - 1) + " links + controller" : " · controller")) : "") +
+        (st.length > 1 ? row("2-pin pairs for feeds", "× " + (st.length - 1)) : "") +
+        (n ? row("Inline fuses", "× " + st.length + " · " + [...new Set(secA.map(fuseA))].sort((a, b) => a - b).map((f) => fmt(f, f % 1 ? 1 : 0) + " A").join(", ")) : "") +
+        (n ? row("Solder joints", "≈ " + fmt(solder)) : "") +
+        (n > 1 ? row("Most current through a link", fmt(maxLinkA, 1) + " A" + (maxLinkA > 3 ? ' <span class="warn">over 3 A</span>' : "")) : "");
+      $("wireBuy").dataset.plain = "Wire runs\n" + runs.map((r) => r.name + "\t" + wtxt(r).join(" + ") + "\t" + fmt(r.m, 2) + " m each").join("\n") +
+        "\n\nBuy (" + fmt(spare * 100) + "% spare)\n" + gs.map((g) => g + "\t" + [...tot.get(g)].map(([role, m]) => role + " " + buy(m) + " m").join(", ")).join("\n") +
+        (n ? "\n\n" + pins + "-pin connector pairs\t" + n + (st.length > 1 ? "\n2-pin connector pairs\t" + (st.length - 1) : "") + "\nInline fuses\t" + st.length : "");
+      let wn = "Each link is a short " + pins + "-wire lead with a connector in the gap between tiles (" + fmt(pig * 1000) + " mm of wire each side), so tiles can be unplugged; jumps add their centre-to-centre length. Feed leads run straight from the supply to each feed tile, plus the extra run you set.";
+      wn += " Data is " + dataG + "; power links are " + linkG + " to match the Power panel, and each feed lead is sized for its own section's current at your brightness limit, and never thinner than the links.";
+      if (backup) wn += " WS2815 carries a backup data line, so links are 4-wire (+V, data, backup, GND). On tile 1, tie the backup input to ground.";
+      if (maxLinkA > 3 || maxFeedA > 3) wn += " JST-SM pins are rated about 3 A; a link or feed above that needs more feeds or a heavier connector (XT30, or two pins in parallel) for power.";
+      if (["16 AWG", "14 AWG"].includes(linkG)) wn += " JST-SM crimps take 22–18 AWG, so with " + linkG + " links use a heavier connector or step down to 18 AWG for the pigtails.";
+      wn += " Ready-made " + pins + "-core LED extension cable works for the links if you'd rather not run single wires.";
+      $("wireNote").textContent = n ? wn : "";
     }
 
     // measurements sidebar
