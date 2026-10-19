@@ -80,6 +80,9 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 canvas { display: block; width: 100%; height: auto; cursor: pointer; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.ltoggle { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; margin: -3px 0; cursor: pointer; }
+.ltoggle:hover { border-color: var(--trace); }
+.ltoggle[aria-pressed="false"] { opacity: 0.6; text-decoration: line-through; }
 
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -311,7 +314,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
         <div class="editor"><canvas id="cv" width="800" height="480" aria-label="Hex layout editor. Click a dashed slot to add a tile, click a tile to remove it."></canvas></div>
         <div class="legend">
           <span><i style="background:var(--accent)"></i>Data in (tile 1)</span>
-          <span><i style="background:var(--trace)"></i>Data path, dashed = long jump wire</span>
+          <button type="button" class="ltoggle" id="pathShow" aria-pressed="true" title="Show or hide the data path on the layout"><i style="background:var(--trace)"></i>Data path, dashed = long jump wire</button>
           <span><i style="background:var(--pwr)"></i>Power feed</span>
           <span>Thicker inner ring = deeper tile</span>
         </div>
@@ -390,7 +393,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let tool = "add";
   let measures = []; // { a: [x, y], b: [x, y], legs } in unrotated unit coords
   let shapes = [];   // { name, kind: "rect" | "circle", w, h, x, y } in mm; x, y = centre in screen orientation, from tile 0's centre
-  let mA = null, hover = null, lastDraw = null, mHi = -1, sHi = -1, drag = null, measShow = true;
+  let mA = null, hover = null, lastDraw = null, mHi = -1, sHi = -1, drag = null, measShow = true, pathShow = true;
   let depth = 40;
 
   const key = (q, r) => q + "," + r;
@@ -401,7 +404,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   function getState() {
-    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow };
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow };
     ids.forEach((k) => { o[k] = $(k).value; });
     return o;
   }
@@ -425,6 +428,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
       : (m && okPt(m.a) && okPt(m.b) ? { a: [+m.a[0], +m.a[1]], b: [+m.b[0], +m.b[1]], legs: m.legs !== false } : null);
     measures = Array.isArray(saved.measures) ? saved.measures.map(toM).filter(Boolean) : [];
     measShow = saved.measShow !== false;
+    pathShow = saved.pathShow !== false;
     shapes = Array.isArray(saved.shapes) ? saved.shapes.filter((x) => x && isFinite(x.x) && isFinite(x.y) && +x.w > 0)
       .map((x) => ({ name: String(x.name || "Shape").slice(0, 40), kind: x.kind === "circle" ? "circle" : "rect", w: +x.w, h: +(x.h || x.w), x: +x.x, y: +x.y })) : [];
     mA = null;
@@ -742,6 +746,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; measures = []; mA = null; tool = "add"; applyVis(); update(); });
   $("shKind").addEventListener("change", applyVis);
   $("mShow").addEventListener("click", () => { measShow = !measShow; update(); });
+  $("pathShow").addEventListener("click", () => { pathShow = !pathShow; update(); });
   $("mLegsAll").addEventListener("click", () => { const on = !measures.every((m) => m.legs); measures.forEach((m) => { m.legs = on; }); update(); });
   $("shapeList").addEventListener("click", (e) => { const b = e.target.closest("button[data-s]"); if (b) { shapes.splice(+b.dataset.s, 1); sHi = -1; update(); } });
   const setSHi = (i) => { if (i === sHi) return; sHi = i; document.querySelectorAll(".srow").forEach((r) => r.classList.toggle("on", +r.dataset.srow === i)); redraw(); };
@@ -1061,6 +1066,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     $("mShow").hidden = !measures.length;
     $("mShow").setAttribute("aria-pressed", measShow);
     $("mShow").textContent = measShow ? "Shown" : "Hidden";
+    $("pathShow").setAttribute("aria-pressed", pathShow);
     $("sCount").textContent = shapes.length ? String(shapes.length) : "";
     $("shapeList").innerHTML = shapes.length
       ? shapes.map((sh, i) => {
@@ -1138,7 +1144,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     // data path
     const jumpSet = new Set(jumps);
     g.strokeStyle = c("--trace"); g.lineWidth = Math.max(1.5, s * 0.05);
-    for (let i = 1; i < order.length; i++) {
+    for (let i = 1; pathShow && i < order.length; i++) {
       const a = tiles.get(order[i - 1]), b = tiles.get(order[i]);
       const [ax, ay] = P(center(a.q, a.r)), [bx, by] = P(center(b.q, b.r));
       g.setLineDash(jumpSet.has(i) ? [5, 4] : []);

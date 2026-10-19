@@ -78,6 +78,7 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - Support 1 (wall mount): tiles × the "wall mounts per tile" input.
   - Lids: one per tile.
 - Data path: it first tries a tile-to-tile path through neighbours from the data-in tile (DFS with Warnsdorff ordering). If no such path exists, it walks greedily and marks the long jump wires.
+  - The "Data path" entry in the legend is a toggle (`pathShow`, saved with the state and configs) that hides the path arrows on the canvas. The tile numbers stay.
 - Power injection lands at the start of a tile: every floor(inject spacing ÷ LEDs per tile) tiles, at least 1. Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
 - Measure tool (`tool = "measure"`):
   - Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres within about 16 px; anywhere else gives a free point.
