@@ -75,9 +75,20 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - "Randomize depths" (under the depth picker) gives each tile a random depth, visiting tiles in random order. It picks a depth none of its already-assigned neighbours has where possible, so adjacent tiles differ. One level of Undo restores the depths from before the first randomize in a run.
 - Parts and connectors:
   - Support 3 (edge joint): one per shared edge.
-  - Support 2 (3-way corner): one per corner where 3 tiles meet.
-  - Support 1 (wall mount): tiles × the "wall mounts per tile" input.
+  - Support 2 (3-way corner): one per corner where 3 tiles meet, minus the corners that hold a wall mount.
+  - Support 1 (wall mount): one per placed mount. A mount plugs into a 3-way corner in place of a Support 2, so mounts can only go at corners where three tiles meet.
   - Lids: one per tile.
+- Wall mounts:
+  - `triCorners()` lists the 3-way corners, each keyed by `vkey`.
+  - `autoMounts(reach)` is a greedy set cover. Every tile within `reach` tile-steps (the `mountReach` select: 0, 1 or 2; default 1) of a mount's three tiles counts as covered.
+    - Ties go to higher corners (smaller screen y), then left.
+    - Corners under a shape are skipped, and redundant mounts are pruned.
+    - Each connected group gets a second mount, so it can't pivot.
+  - The Mounts tool (`tool = "mount"`) toggles a corner on click and switches to manual (`mountAuto = false`). "Auto-place" switches back.
+  - `mountKeys`, `mountAuto`, `mountShow` and `mountRef` are saved with the state and configs. Manual keys that stop being 3-way corners are dropped.
+  - `unreached()` outlines tiles no mount reaches in red dashes and lists them. Single-file arms have no 3-way corners.
+  - The Wall mounts panel numbers mounts M1… top to bottom, then left to right. It gives across and down mm from a chosen reference: layout top-left, bottom-left, top-right, or any shape's centre. Positions are mount centres. It also has a copyable table, the printed weight and the grams per mount.
+  - The "Wall mount" legend entry toggles the mounts on the canvas.
 - Data path (`solveChain`): a branch-and-bound search over tile orders from the data-in tile.
   - It minimises the number of jump wires first, then their total length (cost = 1000 per jump + centre-to-centre distance).
   - It steps to neighbours in Warnsdorff order and only jumps when stuck, trying the 5 nearest unvisited tiles plus up to 3 chain ends.

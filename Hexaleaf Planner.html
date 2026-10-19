@@ -209,6 +209,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <button type="button" data-tool="start" aria-pressed="false">Data in</button>
           <button type="button" data-tool="measure" aria-pressed="false">Measure</button>
           <button type="button" data-tool="shape" aria-pressed="false">Shapes</button>
+          <button type="button" data-tool="mount" aria-pressed="false">Mounts</button>
         </div>
         <div id="shapeForm" class="shape-form" hidden>
           <div class="row2">
@@ -244,7 +245,13 @@ footer { font-size: 0.8rem; color: var(--muted); }
               <option value="pointy">Point top</option>
             </select>
           </label>
-          <label for="mounts">Wall mounts per tile<input type="number" id="mounts" min="0" step="1" value="1"></label>
+          <label for="mountReach">Mount within reach of
+            <select id="mountReach">
+              <option value="0">every tile</option>
+              <option value="1" selected>1 tile of every tile</option>
+              <option value="2">2 tiles of every tile</option>
+            </select>
+          </label>
         </div>
         <div class="btns">
           <button type="button" class="copy" id="bestStartBtn" title="Try every tile as the data-in tile and pick the one needing the fewest, shortest jump wires">Best data-in tile</button>
@@ -336,6 +343,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <span><i style="background:var(--accent)"></i>Data in (tile 1)</span>
           <button type="button" class="ltoggle" id="pathShow" aria-pressed="true" title="Show or hide the data path on the layout"><i style="background:var(--trace)"></i>Data path, dashed = long jump wire</button>
           <span><i style="background:var(--pwr)"></i>Power feed</span>
+          <button type="button" class="ltoggle" id="mountShow" aria-pressed="true" title="Show or hide the wall mounts on the layout"><i style="background:var(--ink)"></i>Wall mount</button>
           <span>Thicker inner ring = deeper tile</span>
         </div>
         <div class="simbar" id="simBar" hidden>
@@ -446,6 +454,16 @@ footer { font-size: 0.8rem; color: var(--muted); }
       </section>
 
       <section class="panel">
+        <div class="head-row"><h2>Wall mounts</h2><span class="btns"><button type="button" class="copy" id="mountAutoBtn">Auto-place</button><button type="button" class="copy" id="mountCopy">Copy</button></span></div>
+        <dl id="mountSum"></dl>
+        <label for="mountRef" style="margin:12px 0 8px">Drill positions measured from
+          <select id="mountRef"></select>
+        </label>
+        <div style="overflow-x:auto"><table class="ptable" id="mountTable"></table></div>
+        <p class="note" id="mountNote"></p>
+      </section>
+
+      <section class="panel">
         <h2>Strip and wiring</h2>
         <dl id="strip"></dl>
         <p class="note" id="stripNote"></p>
@@ -464,7 +482,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mountReach","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
   const STORE = "hexplanner";
   const chips = {
     ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
@@ -484,6 +502,8 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let measures = []; // { a: [x, y], b: [x, y], legs } in unrotated unit coords
   let shapes = [];   // { name, kind: "rect" | "circle", w, h, x, y } in mm; x, y = centre in screen orientation, from tile 0's centre
   let mA = null, hover = null, lastDraw = null, mHi = -1, sHi = -1, drag = null, measShow = true, pathShow = true;
+  let mountAuto = true, mountKeys = [], mountShow = true, mountRefSel = "tl"; // mountKeys = 3-way corner keys
+  let mountOrder = [], unreachedSet = new Set();
   let depth = 40;
 
   const key = (q, r) => q + "," + r;
@@ -494,7 +514,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   function getState() {
-    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow };
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow, mountAuto, mountKeys: mountKeys.slice(), mountShow, mountRef: mountRefSel };
     ids.forEach((k) => { const el = $(k); o[k] = el.type === "checkbox" ? el.checked : el.value; });
     return o;
   }
@@ -511,7 +531,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     }
     startKey = saved.start && tiles.has(saved.start) ? saved.start : null;
     if (DEPTHS.includes(saved.depth)) depth = saved.depth;
-    if (["add", "paint", "start", "measure", "shape"].includes(saved.tool)) tool = saved.tool;
+    if (["add", "paint", "start", "measure", "shape", "mount"].includes(saved.tool)) tool = saved.tool;
     const okPt = (p) => Array.isArray(p) && p.length === 2 && p.every(isFinite);
     // older saves stored a measurement as [[ax, ay], [bx, by]]
     const toM = (m) => Array.isArray(m) && m.length === 2 && m.every(okPt) ? { a: [+m[0][0], +m[0][1]], b: [+m[1][0], +m[1][1]], legs: true }
@@ -519,6 +539,10 @@ footer { font-size: 0.8rem; color: var(--muted); }
     measures = Array.isArray(saved.measures) ? saved.measures.map(toM).filter(Boolean) : [];
     measShow = saved.measShow !== false;
     pathShow = saved.pathShow !== false;
+    mountAuto = saved.mountAuto !== false;
+    mountKeys = Array.isArray(saved.mountKeys) ? saved.mountKeys.filter((k) => typeof k === "string") : [];
+    mountShow = saved.mountShow !== false;
+    mountRefSel = typeof saved.mountRef === "string" ? saved.mountRef : "tl";
     shapes = Array.isArray(saved.shapes) ? saved.shapes.filter((x) => x && isFinite(x.x) && isFinite(x.y) && +x.w > 0)
       .map((x) => ({ name: String(x.name || "Shape").slice(0, 40), kind: x.kind === "circle" ? "circle" : "rect", w: +x.w, h: +(x.h || x.w), x: +x.x, y: +x.y })) : [];
     mA = null;
@@ -737,6 +761,71 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   // shared edges (support 3) and 3-way corners (support 2)
+  // corners where three tiles meet: { key, p (unrotated unit coords), tiles: [3 keys] }
+  const vkey = ([x, y]) => Math.round(x * 2) + ":" + Math.round(y / (S3 / 2));
+  function triCorners() {
+    const m = new Map();
+    tiles.forEach((t, tk) => corners(t.q, t.r).forEach((p) => {
+      const k = vkey(p);
+      if (!m.has(k)) m.set(k, { key: k, p, tiles: [] });
+      m.get(k).tiles.push(tk);
+    }));
+    return [...m.values()].filter((v) => v.tiles.length === 3);
+  }
+  // fewest 3-way corners so every tile is within `reach` tile-steps of a mount; top of the wall preferred;
+  // corners under a shape are skipped; every separate group gets two mounts where it can
+  function autoMounts(reach) {
+    const keys = [...tiles.keys()];
+    const cands = triCorners().filter((v) => { const [x, y] = rot(v.p); return shapeAt(x, y) < 0; });
+    // tile-step distances (BFS) from each tile, limited to `reach`
+    const near = new Map(keys.map((k) => {
+      const seen = new Map([[k, 0]]), q = [k];
+      while (q.length) { const c = q.shift(); if (seen.get(c) >= reach) continue; neighbours(tiles.get(c)).forEach((nk) => { if (!seen.has(nk)) { seen.set(nk, seen.get(c) + 1); q.push(nk); } }); }
+      return [k, [...seen.keys()]];
+    }));
+    const cover = cands.map((v) => new Set(v.tiles.flatMap((tk) => near.get(tk))));
+    const coverable = new Set(cover.flatMap((c) => [...c]));
+    const left = new Set(coverable), chosen = [];
+    const yOf = (v) => rot(v.p)[1], xOf = (v) => rot(v.p)[0];
+    while (left.size) {
+      let bi = -1, bg = 0;
+      cands.forEach((v, i) => {
+        if (chosen.includes(i)) return;
+        let g = 0; cover[i].forEach((tk) => { if (left.has(tk)) g++; });
+        if (g > bg || (g === bg && g > 0 && (yOf(v) < yOf(cands[bi]) - 1e-6 || (Math.abs(yOf(v) - yOf(cands[bi])) < 1e-6 && xOf(v) < xOf(cands[bi]))))) { bg = g; bi = i; }
+      });
+      if (bi < 0) break;
+      chosen.push(bi); cover[bi].forEach((tk) => left.delete(tk));
+    }
+    // drop any mount the others already make redundant
+    for (let j = chosen.length - 1; j >= 0; j--) {
+      const rest = chosen.filter((_, x) => x !== j), got = new Set(rest.flatMap((i) => [...cover[i]]));
+      if ([...coverable].every((tk) => got.has(tk))) chosen.splice(j, 1);
+    }
+    // two per connected group, so a group can't pivot on one screw
+    const group = new Map(); let gid = 0;
+    keys.forEach((k) => { if (group.has(k)) return; const st = [k]; group.set(k, gid); while (st.length) { const c = st.pop(); neighbours(tiles.get(c)).forEach((nk) => { if (!group.has(nk)) { group.set(nk, gid); st.push(nk); } }); } gid++; });
+    for (let gI = 0; gI < gid; gI++) {
+      const inG = (i) => group.get(cands[i].tiles[0]) === gI;
+      const have = chosen.filter(inG);
+      const pool = cands.map((_, i) => i).filter((i) => inG(i) && !chosen.includes(i));
+      if (have.length === 1 && pool.length) {
+        const a = rot(cands[have[0]].p);
+        pool.sort((i, j) => { const b = rot(cands[i].p), c = rot(cands[j].p); return Math.hypot(c[0] - a[0], c[1] - a[1]) - Math.hypot(b[0] - a[0], b[1] - a[1]); });
+        chosen.push(pool[0]);
+      }
+    }
+    return chosen.map((i) => cands[i].key);
+  }
+  // tiles no mount reaches within `reach` steps
+  function unreached(keysOfMounts, reach) {
+    const tc = new Map(triCorners().map((v) => [v.key, v]));
+    const start = keysOfMounts.filter((k) => tc.has(k)).flatMap((k) => tc.get(k).tiles);
+    const dist = new Map(start.map((k) => [k, 0])), q = start.slice();
+    while (q.length) { const c = q.shift(); if (dist.get(c) >= reach) continue; neighbours(tiles.get(c)).forEach((nk) => { if (!dist.has(nk)) { dist.set(nk, dist.get(c) + 1); q.push(nk); } }); }
+    return [...tiles.keys()].filter((k) => !dist.has(k));
+  }
+
   function joints() {
     let edges = 0;
     tiles.forEach((t) => { for (let i = 0; i < 3; i++) if (tiles.has(key(t.q + DIRS[i][0], t.r + DIRS[i][1]))) edges++; });
@@ -942,7 +1031,8 @@ footer { font-size: 0.8rem; color: var(--muted); }
       paint: "Click tiles to change them to the chosen depth.",
       start: "Click the tile where the data wire from the controller comes in.",
       measure: "Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres, and to shape corners, edges and centres. Click the first point again to cancel.",
-      shape: "Click the layout to place this shape, centred where you click. Drag any shape to move it. Measure to it with the Measure tool."
+      shape: "Click the layout to place this shape, centred where you click. Drag any shape to move it. Measure to it with the Measure tool.",
+      mount: "Click a corner where three tiles meet to add or remove a wall mount (Support 1). Faint circles are the corners that can take one. Auto-place under Wall mounts puts them back automatically."
     }[tool];
     $("shapeForm").hidden = tool !== "shape";
     const circ = $("shKind").value === "circle";
@@ -993,6 +1083,15 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("shKind").addEventListener("change", applyVis);
   $("mShow").addEventListener("click", () => { measShow = !measShow; update(); });
   $("pathShow").addEventListener("click", () => { pathShow = !pathShow; update(); });
+  $("mountShow").addEventListener("click", () => { mountShow = !mountShow; update(); });
+  $("mountAutoBtn").addEventListener("click", () => { mountAuto = true; update(); });
+  $("mountRef").addEventListener("change", () => { mountRefSel = $("mountRef").value; update(); });
+  $("mountCopy").addEventListener("click", () => {
+    const txt = $("mountTable").dataset.plain || "";
+    const b = $("mountCopy");
+    const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); };
+    try { navigator.clipboard.writeText(txt).then(done, () => {}); } catch (e) {}
+  });
   $("mLegsAll").addEventListener("click", () => { const on = !measures.every((m) => m.legs); measures.forEach((m) => { m.legs = on; }); update(); });
   $("shapeList").addEventListener("click", (e) => { const b = e.target.closest("button[data-s]"); if (b) { shapes.splice(+b.dataset.s, 1); sHi = -1; update(); } });
   const setSHi = (i) => { if (i === sHi) return; sHi = i; document.querySelectorAll(".srow").forEach((r) => r.classList.toggle("on", +r.dataset.srow === i)); redraw(); };
@@ -1106,6 +1205,17 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
   $("cv").addEventListener("pointerdown", (ev) => {
     if (!view || simOn) return;
+    if (tool === "mount") {
+      const [wx, wy] = toWorld(ev);
+      let best = null, bd = 18 / view.s;
+      triCorners().forEach((v) => { const [x, y] = rot(v.p); const d = Math.hypot(x - wx, y - wy); if (d < bd) { bd = d; best = v.key; } });
+      if (!best) return;
+      mountAuto = false;
+      const i = mountKeys.indexOf(best);
+      if (i >= 0) mountKeys.splice(i, 1); else mountKeys.push(best);
+      update();
+      return;
+    }
     if (tool === "shape") {
       const [wx, wy] = toWorld(ev), R = Rmm();
       let i = shapeAt(wx, wy);
@@ -1165,7 +1275,11 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
     const { order, jumps } = dataPath();
     const { edges, tri } = joints();
-    const mounts = Math.max(0, Math.round(num("mounts")));
+    const reach = Math.max(0, Math.round(num("mountReach")));
+    const triList = triCorners(), triKeys = new Set(triList.map((v) => v.key));
+    if (mountAuto) mountKeys = autoMounts(reach);
+    else mountKeys = mountKeys.filter((k) => triKeys.has(k));
+    const mountN = mountKeys.length;
 
     // power
     const volts = num("volts") || 5, ma = num("ma") || 60, cap = Math.min(100, Math.max(1, num("cap"))) / 100;
@@ -1209,10 +1323,10 @@ footer { font-size: 0.8rem; color: var(--muted); }
       row("Lids", "× " + n) +
       row("Connectors", "", "sub") +
       row("Support 3 (edge joint)", "× " + edges) +
-      row("Support 2 (3-way corner)", "× " + tri) +
-      row("Support 1 (wall mount)", "× " + n * mounts) +
-      row("Total parts", fmt(n * 2 + edges + tri + n * mounts));
-    let prn = "One edge joint for each pair of touching sides, and one 3-way corner wherever three tiles meet.";
+      row("Support 2 (3-way corner)", "× " + (tri - mountN)) +
+      row("Support 1 (wall mount)", "× " + mountN) +
+      row("Total parts", fmt(n * 2 + edges + tri));
+    let prn = "One edge joint for each pair of touching sides, and one 3-way corner wherever three tiles meet; a wall mount (Support 1) takes the place of the 3-way corner where it sits.";
     if (!connected()) prn += " Some tiles don't touch the rest, so they need their own mounts and a longer data wire.";
     $("printNote").innerHTML = prn.replace(/(Some tiles.*)$/, '<span class="warn">$1</span>');
 
@@ -1290,7 +1404,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
       ["Lid", "lid", n, true],
       ["Wall 25 mm", "w25", cnt(25), true], ["Wall 30 mm", "w30", cnt(30), true],
       ["Wall 35 mm", "w35", cnt(35), true], ["Wall 40 mm", "w40", cnt(40), true],
-      ["Support 1", "s1", n * mounts, false], ["Support 2", "s2", tri, false], ["Support 3", "s3", edges, false]
+      ["Support 1", "s1", mountN, false], ["Support 2", "s2", tri - mountN, false], ["Support 3", "s3", edges, false]
     ].filter((p) => p[2] > 0);
     const price = Math.max(0, num("price")), spool = Math.max(1, num("spool"));
     let gT = 0, tT = 0, plates = 0;
@@ -1307,6 +1421,46 @@ footer { font-size: 0.8rem; color: var(--muted); }
     if (n) ptn += " " + fmt(plates) + " tile and lid plates, plus the supports batched on shared plates.";
     if (tT > 24 * 60) ptn += " That's about " + fmt(tT / 60 / 24, 1) + " days of printing back to back.";
     $("printTimeNote").textContent = ptn;
+
+    // wall mounts panel
+    {
+      const R = outerSide, tNo = new Map(order.map((k, i) => [k, i + 1]));
+      const tc = new Map(triList.map((v) => [v.key, v]));
+      const pts = mountKeys.map((k) => rot(tc.get(k).p).map((x) => x * R)); // mm, screen orientation
+      // reference points: layout corners, plus each shape's centre
+      let bx0 = 0, by0 = 0, bx1 = 0, by1 = 0;
+      if (n) { bx0 = by0 = 1e9; bx1 = by1 = -1e9; tiles.forEach((t) => corners(t.q, t.r).forEach((p) => { const [x, y] = rot(p); bx0 = Math.min(bx0, x * R); bx1 = Math.max(bx1, x * R); by0 = Math.min(by0, y * R); by1 = Math.max(by1, y * R); })); }
+      const refs = [["tl", "Top-left corner of the layout", bx0, by0], ["bl", "Bottom-left corner of the layout", bx0, by1], ["tr", "Top-right corner of the layout", bx1, by0]]
+        .concat(shapes.map((sh, i) => ["s" + i, sh.name + " (centre)", sh.x, sh.y]));
+      if (!refs.some((r) => r[0] === mountRefSel)) mountRefSel = "tl";
+      $("mountRef").innerHTML = refs.map((r) => '<option value="' + r[0] + '"' + (r[0] === mountRefSel ? " selected" : "") + ">" + r[1].replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])) + "</option>").join("");
+      const ref = refs.find((r) => r[0] === mountRefSel);
+      // number mounts top to bottom, then left to right, so the chart reads like the wall
+      const idx = pts.map((p, i) => i).sort((a, b) => (pts[a][1] - pts[b][1]) || (pts[a][0] - pts[b][0]));
+      mountOrder = idx.map((i) => mountKeys[i]);
+      const lr = (v) => (v >= 0 ? fmt(v, 0) + " → right" : fmt(-v, 0) + " ← left"), ud = (v) => (v >= 0 ? fmt(v, 0) + " ↓ down" : fmt(-v, 0) + " ↑ up");
+      const rowsM = idx.map((i, j) => {
+        const dx = pts[i][0] - ref[2], dy = pts[i][1] - ref[3];
+        const ts = tc.get(mountKeys[i]).tiles.map((k) => "#" + tNo.get(k)).sort((a, b) => a.slice(1) - b.slice(1)).join(" ");
+        return { j: j + 1, dx, dy, ts };
+      });
+      $("mountTable").innerHTML = "<thead><tr><th>Mount</th><th>Across (mm)</th><th>Down (mm)</th><th>Between tiles</th></tr></thead><tbody>" +
+        (rowsM.length ? rowsM.map((r) => "<tr><td>M" + r.j + "</td><td>" + lr(r.dx) + "</td><td>" + ud(r.dy) + "</td><td>" + r.ts + "</td></tr>").join("") : '<tr><td colspan="4">No mounts placed.</td></tr>') + "</tbody>";
+      $("mountTable").dataset.plain = "Wall mounts, measured from: " + ref[1] + "\n" + rowsM.map((r) => "M" + r.j + "\t" + lr(r.dx) + "\t" + ud(r.dy) + "\ttiles " + r.ts).join("\n");
+      const miss = unreached(mountKeys, reach).map((k) => tNo.get(k)).sort((a, b) => a - b);
+      unreachedSet = new Set(unreached(mountKeys, reach));
+      const kg = gT / 1000;
+      $("mountSum").innerHTML =
+        row("Wall mounts", fmt(mountN) + (mountAuto ? " · placed automatically" : " · placed by hand")) +
+        row("Corners that can take one", fmt(triList.length) + " (where three tiles meet)") +
+        row("Printed weight", "≈ " + fmt(kg, 2) + " kg" + (mountN ? " · ≈ " + fmt(gT / mountN, 0) + " g per mount" : "")) +
+        (miss.length ? row("Out of reach", '<span class="warn">' + miss.length + " tile" + (miss.length > 1 ? "s" : "") + "</span>") : "");
+      let mn = "Positions are mount centres, i.e. the corner where the three tiles meet; add the screw-hole offset from your Support 1 model. Across is measured left/right on the wall, down is measured down.";
+      if (miss.length) mn += " " + (miss.length === 1 ? "Tile " : "Tiles ") + miss.map((x) => "#" + x).join(", ") + (miss.length === 1 ? " has" : " have") + " no mount within " + (reach ? reach + " tile" + (reach > 1 ? "s" : "") : "reach") + ". Single-file arms have no corner where three tiles meet, so they need a widened arm, a longer reach, or a different fixing (adhesive strip or a custom mount).";
+      if (!mountAuto) mn += " You've placed these by hand; Auto-place puts them back automatically.";
+      $("mountNote").textContent = mn;
+      $("mountShow").setAttribute("aria-pressed", mountShow);
+    }
 
     // measurements sidebar
     const tileNo = new Map(order.map((k, i) => [k, i + 1]));
@@ -1673,6 +1827,29 @@ footer { font-size: 0.8rem; color: var(--muted); }
       g.fillStyle = c("--muted"); g.font = "500 10px " + c("--font-mono");
       g.fillText(sh.kind === "circle" ? "⌀" + fmt(sh.w, 0) : fmt(sh.w, 0) + "×" + fmt(sh.h, 0), cx, cy + 7);
     });
+
+    // wall mounts: candidates faint in the Mounts tool; placed mounts as screw heads labelled M1..; unreachable tiles outlined
+    const isMt = tool === "mount";
+    if (isMt || mountShow) {
+      if (isMt) { g.strokeStyle = c("--muted"); g.lineWidth = 1; g.globalAlpha = 0.6; triCorners().forEach((v) => { const [x, y] = P(v.p); g.beginPath(); g.arc(x, y, Math.max(4, s * 0.08), 0, Math.PI * 2); g.stroke(); }); g.globalAlpha = 1; }
+      const tc = new Map(triCorners().map((v) => [v.key, v]));
+      const rr = Math.max(5, s * 0.13);
+      mountOrder.forEach((k, j) => {
+        const v = tc.get(k); if (!v) return;
+        const [x, y] = P(v.p);
+        g.fillStyle = c("--panel"); g.strokeStyle = c("--ink"); g.lineWidth = 2;
+        g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(x - rr * 0.55, y); g.lineTo(x + rr * 0.55, y); g.moveTo(x, y - rr * 0.55); g.lineTo(x, y + rr * 0.55); g.stroke();
+        g.fillStyle = c("--ink"); g.font = "600 " + Math.round(Math.max(9, s * 0.16)) + "px " + c("--font-mono"); g.textAlign = "center"; g.textBaseline = "bottom";
+        g.fillText("M" + (j + 1), x, y - rr - 2);
+      });
+      if (unreachedSet.size) {
+        g.strokeStyle = c("--pwr"); g.lineWidth = 2; g.setLineDash([5, 4]);
+        unreachedSet.forEach((k) => { const t = tiles.get(k); if (t) { hexPath(t, 0.9); g.stroke(); } });
+        g.setLineDash([]);
+      }
+      g.textAlign = "center"; g.textBaseline = "middle";
+    }
 
     // measurements
     const isM = tool === "measure";
