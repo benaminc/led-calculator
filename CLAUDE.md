@@ -7,7 +7,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
 - `configs/`: saved configurations, one subfolder per tool (see Conventions). The JSON files are git-ignored.
 
 - `LED Matrix Planner.html`: plans either a 2D strip matrix or a straight strip run. It covers LED count, strip to buy, power supply size, power injection points, wire gauge, voltage drop, a canvas wiring preview, and the values to type into WLED.
-- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. A Measure tool gives the distance between any two points. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
+- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. A Measure tool gives the distance between any two points, and a Shapes tool places custom obstacles (wall plugs, switches) to plan around. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
 
 ## Conventions
 
@@ -24,7 +24,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
   - Each tool's `getState()` and `applyState()` are the single place its saved state is defined, so a new input only needs adding to `ids`.
 - Visibility is toggled with the `hidden` attribute. `[hidden] { display: none !important; }` is in the stylesheet, so keep it.
 - Keep the layout working at phone width (about 400px).
-- The Hexaleaf Planner fills the whole window width (no max-width). From 1500 px wide, the result panels flow into columns (`auto-fill, minmax(420px, 1fr)`) under the full-width layout panel and stats row. The canvas grows with the window: tiles up to 110 px across, and a canvas up to 72% of the window height.
+- The Hexaleaf Planner fills the whole window width (no max-width). The measurements and shapes sidebar is 290 px wide. From 1500 px wide, the result panels flow into columns (`auto-fill, minmax(420px, 1fr)`) under the full-width layout panel and stats row. The canvas grows with the window: tiles up to 110 px across, and a canvas up to 72% of the window height.
 
 ## How the planner works
 
@@ -83,8 +83,18 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres within about 16 px; anywhere else gives a free point.
   - It reports the straight-line distance plus its horizontal (↔) and vertical (↕) parts in mm, in screen orientation, so point-top layouts swap them.
   - Measurements scale by the outer side length (the circumradius) and assume tiles butt together with no gap.
-  - They are stored as `measures` in unrotated unit coordinates, are saved with the state and configs, and are drawn in every tool. Only the newest one shows its ↔/↕ legs, to keep the canvas readable.
-  - A Measurements sidebar sits to the right of the canvas (below it under 1100 px). Each row has a ✕ to delete it, plus Undo last and Clear all. Hovering or focusing a row highlights that measurement on the canvas (`mHi`) and shows its ↔/↕ legs.
+  - They are stored as `measures: [{ a, b, legs }]` in unrotated unit coordinates and are saved with the state and configs. Older saves stored them as `[[ax, ay], [bx, by]]`, and `applyState` still reads that form.
+  - When a measurement's `legs` flag is on, it draws the full dashed rectangle, so both right triangles show. Both horizontals are labelled ↔ and both verticals ↕, with right-angle marks at the two corners off the hypotenuse. The sidebar row also shows the angle from level.
+  - A Measurements sidebar sits to the right of the canvas (below it under 1100 px). Each row has a Legs toggle and a ✕.
+  - Below the list are "All legs on/off", Undo last and Clear all. A Shown/Hidden toggle in the header (`measShow`, saved) hides every measurement on the canvas.
+  - Hovering or focusing a row highlights that measurement on the canvas (`mHi`) with its legs, even while all are hidden.
+- Shapes tool (`tool = "shape"`): custom obstacles such as a wall plug.
+  - Each shape is `{ name, kind: "rect" | "circle", w, h, x, y }` in mm, where x, y is the centre in screen orientation measured from tile (0,0)'s centre. They are stored as `shapes` and saved with the state and configs.
+  - The form (`shName`, `shKind`, `shW`, `shH`) sets the next shape. It defaults to a 70 × 115 mm wall plug, a North American single-gang cover plate.
+  - Clicking empty canvas places a shape, and dragging moves one. The view is held still while dragging so the shape tracks the pointer.
+  - Shapes are drawn translucent over the tiles. They turn red, with "Overlaps tile #n" in the sidebar, when they intersect a tile (separating-axis test against the hex polygons).
+  - Shape corners, edge midpoints and centres are snap points for the Measure tool.
+  - Shapes are physical sizes in mm, so changing the outer side length rescales the tiles but not the shapes. "Clear all" in Edit layout keeps the shapes.
 - Filament and print time:
   - Each part has slicer figures (`g_<part>`, `t_<part>`: grams and model minutes for one part). They sit in the "Per-part slicer figures" panel and are saved with configs.
   - Lids and walls print one per plate, so each gets model time plus the "setup per plate" overhead (default 6 min, Bambu's prepare time).
