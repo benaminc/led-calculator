@@ -173,7 +173,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 .cfg-row .copy { padding: 5px 12px; }
 .copy.armed { border-color: var(--pwr); color: var(--pwr); }
 .cfg-cur { align-items: center; margin-bottom: 8px; }
-.cfg-curname { font-size: 0.88rem; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-curname { font-size: 0.88rem; color: var(--muted); min-width: 0; }
 .cfg-curname b { color: var(--ink); font-weight: 600; }
 .cfg-curname .dirty { color: var(--accent); }
 .copy.cfg-main { border-color: var(--accent); }
@@ -192,7 +192,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     <form class="panel" id="form" onsubmit="return false">
       <fieldset id="cfgSet">
         <legend>Saved configurations</legend>
-        <div class="cfg-row cfg-cur" id="cfgCurRow" hidden>
+        <div class="cfg-row cfg-cur" id="cfgCurRow">
           <span class="cfg-curname" id="cfgCur" aria-live="polite"></span>
           <button type="button" class="copy cfg-main" id="cfgSaveCur" title="Save over the configuration you're working on (Ctrl+S)">Save</button>
         </div>
@@ -627,17 +627,20 @@ footer { font-size: 0.8rem; color: var(--muted); }
       showCur();
     }
     function showCur() {
-      el("cfgCurRow").hidden = !cur;
-      const sv = el("cfgSave");
+      const sv = el("cfgSave"), bt = el("cfgSaveCur");
       if (!sv.classList.contains("armed")) sv.textContent = cur ? "Save as new" : "Save";
       el("cfgName").placeholder = cur ? "Name for a new copy" : "Name this setup";
-      if (!cur) return;
+      if (!cur) {
+        el("cfgCur").replaceChildren("Nothing loaded yet. Load one below, or name and save a new one.");
+        el("cfgCur").title = "";
+        bt.disabled = true; bt.textContent = "Save";
+        return;
+      }
       const dirty = snap() !== cur.snap;
       const b = document.createElement("b"); b.textContent = cur.name;
       const t = document.createElement("span"); t.textContent = dirty ? " · unsaved changes" : " · saved"; if (dirty) t.className = "dirty";
       el("cfgCur").replaceChildren("Working on ", b, t);
       el("cfgCur").title = cur.fname;
-      const bt = el("cfgSaveCur");
       bt.disabled = !dirty; bt.textContent = dirty ? "Save" : "Saved";
     }
 

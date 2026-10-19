@@ -22,7 +22,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
   - A file looks like `{ app, version: 1, name, saved, state }`, where `state` is the same object the tool keeps in `localStorage`.
   - Overwriting and deleting take a second click (an armed button) instead of `confirm()`.
   - The configuration being worked on (the last one loaded or saved) is kept as `{ fname, name, snap }` in `localStorage` under `ledcalc-current-<app>`, so it survives a reload.
-    - A "Working on <name> · saved / unsaved changes" row shows above the name box. Its Save button (`cfgSaveCur`, also Ctrl/Cmd+S) writes straight over that file, with no name to type and no second click.
+    - A "Working on <name> · saved / unsaved changes" row always shows above the name box. Before anything is loaded it reads "Nothing loaded yet", with Save disabled, so the button is easy to find. Its Save button (`cfgSaveCur`, also Ctrl/Cmd+S) writes straight over that file, with no name to type and no second click.
     - `snap` is `JSON.stringify(getState())` as last loaded or saved. It is compared every 0.7 s to show unsaved changes, and Save reads "Saved" and is disabled when nothing has changed.
     - The name box and its button become "Save as new" for a new copy, which then becomes the one being worked on. Loading clears the name box, and deleting the current file clears the row.
   - Each tool's `getState()` and `applyState()` are the single place its saved state is defined, so a new input only needs adding to `ids`.
