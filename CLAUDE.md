@@ -7,7 +7,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
 - `configs/`: saved configurations, one subfolder per tool (see Conventions). The JSON files are git-ignored.
 
 - `LED Matrix Planner.html`: plans either a 2D strip matrix or a straight strip run. It covers LED count, strip to buy, power supply size, power injection points, wire gauge, voltage drop, a canvas wiring preview, and the values to type into WLED.
-- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. A Measure tool gives the distance between any two points, and a Shapes tool places custom obstacles (wall plugs, switches) to plan around. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments.
+- `Hexaleaf Planner.html`: a Nanoleaf-style layout of 3D-printed hex tiles. Click to add or remove tiles on a hex grid, give each tile a depth (25/30/35/40 mm wall plates), and set which tile takes data in. A Measure tool gives the distance between any two points, and a Shapes tool places custom obstacles (wall plugs, switches) to plan around. It covers the print list (walls by depth, lids, Support 1/2/3), LEDs per tile, strip length, power supply, injection feeds, the data path between tiles and per-tile WLED segments. A Simulate mode animates WLED-style effects on the layout, with a live current estimate.
 
 ## Conventions
 
@@ -110,6 +110,14 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - Shapes are drawn translucent over the tiles. They turn red, with "Overlaps tile #n" in the sidebar, when they intersect a tile (separating-axis test against the hex polygons).
   - Shape corners, edge midpoints and centres are snap points for the Measure tool.
   - Shapes are physical sizes in mm, so changing the outer side length rescales the tiles but not the shapes. "Clear all" in Edit layout keeps the shapes.
+- Simulate mode (the "▶ Simulate" button in the Layout header; `simOn`, not saved):
+  - Animates WLED-style effects on the layout at 60 fps (`requestAnimationFrame`, `simFrame` called from `draw`). Editing is disabled, and ghosts, the legend, measurements and the data path are hidden.
+  - LEDs: `perTile` per tile, spaced evenly around the inner wall (hex at 0.78 of the circumradius). They follow the solved data order, and each tile starts at the corner nearest the previous tile.
+  - Effects (`fxColor`): Rainbow, Colorloop, Rainbow per tile, Solid, Breathe, Wipe, Theater chase, Scanner, Twinkle and Fire.
+  - Controls (all in `ids`, so saved): colour, speed, brightness 0–255, "Effect runs along" (data order, left to right or top to bottom) and "Diffused lids".
+  - Diffused lids fill each tile with a radial glow of its LEDs' average colour. With them off, the bare LEDs are drawn with a small halo.
+  - Brightness limiter like WLED's: a frame's current = Σ ma × (r+g+b)/765 × brightness. Above the planner's WLED current limit, every LED is scaled down, and the readout shows the live amps and the limiter percentage.
+  - Uses the `--sim-bg` / `--sim-tile` tokens (dark in both themes). Shapes stay visible as dashed outlines.
 - Filament and print time:
   - Each part has slicer figures (`g_<part>`, `t_<part>`: grams and model minutes for one part). They sit in the "Per-part slicer figures" panel and are saved with configs.
   - Lids and walls print one per plate, so each gets model time plus the "setup per plate" overhead (default 6 min, Bambu's prepare time).

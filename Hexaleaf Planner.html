@@ -21,6 +21,8 @@
   --trace: #2f6f9f;
   --pwr: #c2372f;
   --dot-off: #c9cfd8;
+  --sim-bg: #10131a;       /* wall at night behind the simulated tiles */
+  --sim-tile: #1c2029;
   --font-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -28,13 +30,13 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
-    --accent: #ffad42; --accent-soft: #3a2a14; --hl: #b49cff; --hl-soft: #2b2442; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+    --accent: #ffad42; --accent-soft: #3a2a14; --hl: #b49cff; --hl-soft: #2b2442; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49; --sim-bg: #07090d; --sim-tile: #161a21;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #12161d; --panel: #1a2029; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c3440;
-  --accent: #ffad42; --accent-soft: #3a2a14; --hl: #b49cff; --hl-soft: #2b2442; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49;
+  --accent: #ffad42; --accent-soft: #3a2a14; --hl: #b49cff; --hl-soft: #2b2442; --trace: #6fb2e6; --pwr: #ff6b5f; --dot-off: #333c49; --sim-bg: #07090d; --sim-tile: #161a21;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -82,6 +84,15 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 canvas { display: block; width: 100%; height: auto; cursor: pointer; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.simbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.simbar label { font-size: 0.78rem; }
+.simbar select { padding: 5px 7px; font-size: 0.85rem; }
+.simbar input[type="range"] { width: 120px; accent-color: var(--accent); }
+.simbar input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.simbar .check { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 0.85rem; }
+.simbar .amps { margin-left: auto; font: 500 0.82rem var(--font-mono); color: var(--muted); }
+.simbar .amps.warn { color: var(--pwr); }
+#simBtn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
 .ltoggle { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; margin: -3px 0; cursor: pointer; }
 .ltoggle:hover { border-color: var(--trace); }
 .ltoggle[aria-pressed="false"] { opacity: 0.6; text-decoration: line-through; }
@@ -316,7 +327,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
     <div class="stack">
       <section class="panel layout-panel">
-        <div class="head-row"><h2>Layout</h2><span class="hint" id="previewNote"></span></div>
+        <div class="head-row"><h2>Layout</h2><span class="btns"><span class="hint" id="previewNote"></span><button type="button" class="copy" id="simBtn" aria-pressed="false" title="Light the layout with WLED-style effects">▶ Simulate</button></span></div>
         <div class="layout-grid">
         <div class="layout-main">
         <div class="editor"><canvas id="cv" width="800" height="480" aria-label="Hex layout editor. Click a dashed slot to add a tile, click a tile to remove it."></canvas></div>
@@ -325,6 +336,34 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <button type="button" class="ltoggle" id="pathShow" aria-pressed="true" title="Show or hide the data path on the layout"><i style="background:var(--trace)"></i>Data path, dashed = long jump wire</button>
           <span><i style="background:var(--pwr)"></i>Power feed</span>
           <span>Thicker inner ring = deeper tile</span>
+        </div>
+        <div class="simbar" id="simBar" hidden>
+          <label for="simFx">Effect
+            <select id="simFx">
+              <option value="rainbow" selected>Rainbow</option>
+              <option value="colorloop">Colorloop</option>
+              <option value="tiles">Rainbow per tile</option>
+              <option value="solid">Solid</option>
+              <option value="breathe">Breathe</option>
+              <option value="wipe">Wipe</option>
+              <option value="chase">Theater chase</option>
+              <option value="scan">Scanner</option>
+              <option value="twinkle">Twinkle</option>
+              <option value="fire">Fire</option>
+            </select>
+          </label>
+          <label for="simColor">Colour<input type="color" id="simColor" value="#ff9a3c"></label>
+          <label for="simSpeed">Speed<input type="range" id="simSpeed" min="1" max="100" value="40"></label>
+          <label for="simBri">Brightness<input type="range" id="simBri" min="1" max="255" value="153"></label>
+          <label for="simMap">Effect runs along
+            <select id="simMap">
+              <option value="chain" selected>Data order</option>
+              <option value="x">Left to right</option>
+              <option value="y">Top to bottom</option>
+            </select>
+          </label>
+          <label class="check" for="simDiff"><input type="checkbox" id="simDiff" checked> Diffused lids</label>
+          <span class="amps" id="simAmps"></span>
         </div>
         </div>
         <aside class="msidebar" id="measureBox" aria-label="Measurements and shapes">
@@ -382,7 +421,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const ids = ["shName","shKind","shW","shH","orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const ids = ["simFx","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
   const STORE = "hexplanner";
   const chips = {
     ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
@@ -413,14 +452,14 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
   function getState() {
     const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow };
-    ids.forEach((k) => { o[k] = $(k).value; });
+    ids.forEach((k) => { const el = $(k); o[k] = el.type === "checkbox" ? el.checked : el.value; });
     return o;
   }
   // returns true if the state carried a tile layout
   function applyState(saved) {
     // v2 changed what "inner" and "outer" mean; drop size inputs saved before that
     const old = saved.v !== 2;
-    ids.forEach((k) => { if (saved[k] !== undefined && !(old && (k === "inner" || k === "outer"))) $(k).value = saved[k]; });
+    ids.forEach((k) => { if (saved[k] !== undefined && !(old && (k === "inner" || k === "outer"))) { const el = $(k); if (el.type === "checkbox") el.checked = !!saved[k]; else el.value = saved[k]; } });
     let had = false;
     if (Array.isArray(saved.tiles)) {
       tiles = new Map();
@@ -1023,7 +1062,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("cv").addEventListener("pointercancel", endDrag);
 
   $("cv").addEventListener("pointerdown", (ev) => {
-    if (!view) return;
+    if (!view || simOn) return;
     if (tool === "shape") {
       const [wx, wy] = toWorld(ev), R = Rmm();
       let i = shapeAt(wx, wy);
@@ -1255,9 +1294,131 @@ footer { font-size: 0.8rem; color: var(--muted); }
         }).join("")
       : '<li class="mempty">' + (tool === "shape" ? "Set a size on the left, then click the layout to place it." : "Pick Shapes above to add a wall plug, switch or anything else to plan around.") + "</li>";
 
+    simCfg = { ma, limitMa, perTile };
     lastDraw = [order, jumps, new Set(feedIdx.map((i) => order[i]))];
     draw(...lastDraw);
     save();
+  }
+
+  // ---------- WLED simulation ----------
+  let simOn = false, simRaf = 0, simCfg = { ma: 60, limitMa: 0, perTile: 0 };
+  const sim = { t0: performance.now() };
+  function hsv(h, sat = 1, v = 1) { // h in 0..1 → [r, g, b] 0..255
+    h = ((h % 1) + 1) % 1;
+    const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - sat), q = v * (1 - f * sat), u = v * (1 - (1 - f) * sat);
+    const [r, g, b] = [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][i % 6];
+    return [r * 255, g * 255, b * 255];
+  }
+  const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ""); const v = m ? parseInt(m[1], 16) : 0xff9a3c; return [v >> 16 & 255, v >> 8 & 255, v & 255]; };
+  const rnd = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+  // one LED's colour: k = its place along the effect (0..1), i = LED number, ti / nt = tile number / count, t = seconds × speed
+  function fxColor(fx, k, i, n, ti, nt, t, col) {
+    switch (fx) {
+      case "solid": return col;
+      case "rainbow": return hsv(k - t * 0.15);
+      case "colorloop": return hsv(t * 0.08);
+      case "tiles": return hsv(ti / Math.max(1, nt) - t * 0.1);
+      case "breathe": { const b = 0.08 + 0.92 * (0.5 - 0.5 * Math.cos(t * 1.6)); return col.map((c) => c * b); }
+      case "wipe": { const p = (t * 0.25) % 2; const on = p < 1 ? k <= p : k > p - 1; return on ? col : [0, 0, 0]; }
+      case "chase": return (i + Math.floor(t * 6)) % 3 === 0 ? col : [0, 0, 0];
+      case "scan": { const p = 0.5 - 0.5 * Math.cos(t * 1.2), dd = Math.abs(k - p) * n; const b = Math.max(0, 1 - dd / 4); return col.map((c) => c * b * b); }
+      case "twinkle": { const ph = rnd(i) * 6.283, rate = 0.6 + rnd(i + 7) * 1.4; const b = Math.pow(Math.max(0, Math.sin(t * rate + ph)), 6); return col.map((c) => c * b); }
+      case "fire": {
+        const h = Math.max(0, Math.min(1, 0.55 + 0.25 * Math.sin(i * 0.37 + t * 3.1) + 0.2 * Math.sin(i * 1.13 - t * 5.3) + 0.15 * Math.sin(i * 0.071 + t * 1.7) - 0.25 * rnd(i + Math.floor(t * 8))));
+        return h < 0.4 ? [h / 0.4 * 200, 0, 0] : h < 0.8 ? [200 + (h - 0.4) / 0.4 * 55, (h - 0.4) / 0.4 * 160, 0] : [255, 160 + (h - 0.8) / 0.2 * 95, (h - 0.8) / 0.2 * 140];
+      }
+    }
+    return col;
+  }
+  // LED positions (unrotated unit coords) around each tile's inner wall, starting at the corner nearest the previous tile
+  function ledLayout(order, perTile) {
+    const out = [];
+    order.forEach((k, ti) => {
+      const t = tiles.get(k), cs = corners(t.q, t.r, 0.78);
+      let k0 = 0;
+      if (ti > 0) {
+        const pt = tiles.get(order[ti - 1]), pc = center(pt.q, pt.r);
+        let bd = 1e9; cs.forEach((c, j) => { const dd = Math.hypot(c[0] - pc[0], c[1] - pc[1]); if (dd < bd) { bd = dd; k0 = j; } });
+      }
+      for (let j = 0; j < perTile; j++) {
+        const u = (j + 0.5) / perTile * 6, e = Math.floor(u), f = u - e;
+        const a = cs[(k0 + e) % 6], b = cs[(k0 + e + 1) % 6];
+        out.push({ p: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], ti });
+      }
+    });
+    return out;
+  }
+  function simLoop() {
+    if (!simOn) return;
+    redraw();
+    simRaf = requestAnimationFrame(simLoop);
+  }
+  function setSim(on) {
+    simOn = on;
+    $("simBtn").setAttribute("aria-pressed", on);
+    $("simBtn").textContent = on ? "■ Stop" : "▶ Simulate";
+    $("simBar").hidden = !on;
+    document.querySelector(".layout-main .legend").hidden = on;
+    cancelAnimationFrame(simRaf);
+    if (on) { sim.t0 = performance.now(); simRaf = requestAnimationFrame(simLoop); }
+    else redraw();
+  }
+  $("simBtn").addEventListener("click", () => setSim(!simOn));
+  // draw one simulated frame over the cleared canvas; returns the estimated current in mA
+  function simFrame(g, P, s, W, H, order, c, hexPath) {
+    g.fillStyle = c("--sim-bg"); g.fillRect(0, 0, W, H);
+    const leds = ledLayout(order, simCfg.perTile), n = leds.length, nt = order.length;
+    const fx = $("simFx").value, col = hexRgb($("simColor").value), speed = Math.max(1, num("simSpeed")) / 40;
+    const t = (performance.now() - sim.t0) / 1000 * speed, map = $("simMap").value;
+    // where each LED sits along the effect: data order, or by position across the layout
+    let ks;
+    if (map === "chain") ks = leds.map((_, i) => i / Math.max(1, n - 1));
+    else {
+      const v = leds.map((l) => { const [x, y] = rot(l.p); return map === "x" ? x : y; });
+      const lo = Math.min(...v), hi = Math.max(...v);
+      ks = v.map((x) => (x - lo) / Math.max(1e-9, hi - lo));
+    }
+    const raw = leds.map((l, i) => fxColor(fx, ks[i], i, n, l.ti, nt, t, col));
+    // WLED's brightness limiter: full white on one LED draws ma; scale down when the frame would pass the limit
+    const bri = Math.max(1, num("simBri")) / 255;
+    let mA = 0; raw.forEach((r) => { mA += simCfg.ma * (r[0] + r[1] + r[2]) / 765; });
+    mA *= bri;
+    const limit = simCfg.limitMa > 0 ? simCfg.limitMa : Infinity;
+    const scale = mA > limit ? limit / mA : 1;
+    const k = bri * scale;
+    const lit = raw.map((r) => r.map((x) => Math.round(x * k)));
+    // tiles: dark shells, then the diffused glow of each tile's LEDs
+    const diff = $("simDiff").checked;
+    const sums = order.map(() => [0, 0, 0, 0]);
+    lit.forEach((r, i) => { const a = sums[leds[i].ti]; a[0] += r[0]; a[1] += r[1]; a[2] += r[2]; a[3]++; });
+    order.forEach((key, ti) => {
+      const tl = tiles.get(key);
+      hexPath(tl, 0.96); g.fillStyle = c("--sim-tile"); g.fill();
+      if (diff && sums[ti][3]) {
+        const [r, gg, b, m] = sums[ti], avg = [r / m, gg / m, b / m];
+        const [cx, cy] = P(center(tl.q, tl.r));
+        const grad = g.createRadialGradient(cx, cy, s * 0.1, cx, cy, s * 0.95);
+        // lids spread the light: brighter in the middle, falling off toward the walls
+        const boost = 1.6;
+        grad.addColorStop(0, "rgba(" + avg.map((x) => Math.min(255, Math.round(x * boost))).join(",") + ",0.95)");
+        grad.addColorStop(1, "rgba(" + avg.map((x) => Math.round(x)).join(",") + ",0.55)");
+        hexPath(tl, 0.9); g.fillStyle = grad; g.fill();
+      }
+      hexPath(tl, 0.96); g.strokeStyle = c("--sim-bg"); g.lineWidth = 1.5; g.stroke();
+    });
+    // LEDs: tiny when diffused, brighter dots when the lids are off
+    const rad = Math.max(1.2, s * (diff ? 0.035 : 0.06));
+    leds.forEach((l, i) => {
+      const [x, y] = P(l.p), r = lit[i];
+      if (!diff && (r[0] + r[1] + r[2]) > 30) { g.fillStyle = "rgba(" + r.join(",") + ",0.35)"; g.beginPath(); g.arc(x, y, rad * 2.4, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = "rgb(" + r.join(",") + ")"; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+    });
+    // obstacles stay visible as faint outlines
+    shapes.forEach((sh) => { const poly = shapePoly(sh).map(([x, y]) => [view.ox + x * s, view.oy + y * s]); g.beginPath(); poly.forEach(([x, y], j) => (j ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.strokeStyle = c("--muted"); g.globalAlpha = 0.5; g.setLineDash([4, 4]); g.stroke(); g.setLineDash([]); g.globalAlpha = 1; });
+    // readout
+    const shown = mA * scale;
+    $("simAmps").textContent = n ? "≈ " + fmt(shown / 1000, 2) + " A now" + (scale < 1 ? " · limiter at " + fmt(scale * 100, 0) + "% (limit " + fmt(limit / 1000, 1) + " A)" : simCfg.limitMa ? " of " + fmt(limit / 1000, 1) + " A limit" : "") : "Add some tiles";
+    $("simAmps").classList.toggle("warn", scale < 1);
   }
 
   function draw(order, jumps, feedSet) {
@@ -1266,7 +1427,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const c = (nm) => cs.getPropertyValue(nm).trim();
     const W = cv.parentElement.clientWidth || 800;
     const dpr = window.devicePixelRatio || 1;
-    const showGhosts = tool === "add";
+    const showGhosts = tool === "add" && !simOn;
     const gh = showGhosts ? ghosts() : new Map();
 
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
@@ -1295,6 +1456,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     g.clearRect(0, 0, W, H);
     const P = (p) => { const [x, y] = rot(p); return [ox + x * s, oy + y * s]; };
     const hexPath = (t, scale) => { g.beginPath(); corners(t.q, t.r, scale).forEach((p, i) => { const [x, y] = P(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
+    if (simOn) { simFrame(g, P, s, W, H, order, c, hexPath); $("previewNote").textContent = "Simulating · " + $("simFx").selectedOptions[0].text; return; }
 
     // ghost slots
     g.setLineDash([4, 4]); g.lineWidth = 1; g.strokeStyle = c("--dot-off");
