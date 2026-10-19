@@ -24,6 +24,7 @@ Planning tools for addressable LED builds (WLED on ESP32). Each tool is a single
   - Each tool's `getState()` and `applyState()` are the single place its saved state is defined, so a new input only needs adding to `ids`.
 - Visibility is toggled with the `hidden` attribute. `[hidden] { display: none !important; }` is in the stylesheet, so keep it.
 - Keep the layout working at phone width (about 400px).
+- The Hexaleaf Planner fills the whole window width (no max-width). From 1500 px wide, the result panels flow into columns (`auto-fill, minmax(420px, 1fr)`) under the full-width layout panel and stats row. The canvas grows with the window: tiles up to 110 px across, and a canvas up to 72% of the window height.
 
 ## How the planner works
 
