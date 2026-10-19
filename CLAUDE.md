@@ -72,6 +72,7 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - `loop` (default): one piece bent round the corners. LEDs per tile = floor((6 × straight wall + 2π × corner radius) ÷ pitch).
   - `sides`: 6 pieces, cut per side. LEDs per tile = 6 × floor(straight wall ÷ pitch).
 - Size inputs: `inner` is the straight part of one inside wall and `outer` is the outer side length (flat to flat = side × √3). Saved state carries `v: 2`; size values saved before v2 meant something else and are ignored on load.
+- "Randomize depths" (under the depth picker) gives each tile a random depth, visiting tiles in random order. It picks a depth none of its already-assigned neighbours has where possible, so adjacent tiles differ. One level of Undo restores the depths from before the first randomize in a run.
 - Parts and connectors:
   - Support 3 (edge joint): one per shared edge.
   - Support 2 (3-way corner): one per corner where 3 tiles meet.

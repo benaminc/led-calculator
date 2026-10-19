@@ -220,6 +220,10 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <button type="button" data-depth="35" aria-pressed="false">35mm</button>
           <button type="button" data-depth="40" aria-pressed="true">40mm</button>
         </div>
+        <div class="btns">
+          <button type="button" class="copy" id="randDepthBtn" title="Give every tile a random depth, avoiding its neighbours' depths where possible">Randomize depths</button>
+          <button type="button" class="copy" id="undoDepthBtn" hidden>Undo</button>
+        </div>
         <p class="hint" id="toolHint"></p>
         <div class="row2">
           <label for="orient">Tiles sit
@@ -865,7 +869,31 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
   document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => { tool = b.dataset.tool; mA = null; hover = null; applyVis(); update(); }));
   document.querySelectorAll("[data-depth]").forEach((b) => b.addEventListener("click", () => { depth = +b.dataset.depth; applyVis(); save(); }));
-  $("exampleBtn").addEventListener("click", () => { loadExample(); update(); });
+  $("exampleBtn").addEventListener("click", () => { loadExample(); depthUndo = null; $("undoDepthBtn").hidden = true; update(); });
+  // random depth per tile; picks one no neighbour already has when it can, so neighbouring tiles differ
+  let depthUndo = null;
+  $("randDepthBtn").addEventListener("click", () => {
+    if (!tiles.size) return;
+    if (!depthUndo) depthUndo = new Map([...tiles].map(([k, t]) => [k, t.d]));
+    const keys = [...tiles.keys()].sort(() => Math.random() - 0.5), done = new Set();
+    keys.forEach((k) => {
+      const t = tiles.get(k);
+      const taken = new Set(neighbours(t).filter((n) => done.has(n)).map((n) => tiles.get(n).d));
+      const free = DEPTHS.filter((d) => !taken.has(d));
+      const pool = free.length ? free : DEPTHS;
+      t.d = pool[Math.floor(Math.random() * pool.length)];
+      done.add(k);
+    });
+    $("undoDepthBtn").hidden = false;
+    $("undoDepthBtn").textContent = "Undo";
+    update();
+  });
+  $("undoDepthBtn").addEventListener("click", () => {
+    if (depthUndo) depthUndo.forEach((d, k) => { const t = tiles.get(k); if (t) t.d = d; });
+    depthUndo = null;
+    $("undoDepthBtn").hidden = true;
+    update();
+  });
   $("bestStartBtn").addEventListener("click", () => {
     const before = dataPath().jumps.length;
     const b = bestStart();
