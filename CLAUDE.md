@@ -83,6 +83,7 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - It reports the straight-line distance plus its horizontal (↔) and vertical (↕) parts in mm, in screen orientation, so point-top layouts swap them.
   - Measurements scale by the outer side length (the circumradius) and assume tiles butt together with no gap.
   - They are stored as `measures` in unrotated unit coordinates, are saved with the state and configs, and are drawn in every tool. Only the newest one shows its ↔/↕ legs, to keep the canvas readable.
+  - A Measurements sidebar sits to the right of the canvas (below it under 1100 px). Each row has a ✕ to delete it, plus Undo last and Clear all. Hovering or focusing a row highlights that measurement on the canvas (`mHi`) and shows its ↔/↕ legs.
 - Filament and print time:
   - Each part has slicer figures (`g_<part>`, `t_<part>`: grams and model minutes for one part). They sit in the "Per-part slicer figures" panel and are saved with configs.
   - Lids and walls print one per plate, so each gets model time plus the "setup per plate" overhead (default 6 min, Bambu's prepare time).
@@ -114,4 +115,4 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - The folder is a git repo on branch `main`. Commit after each change to a tool.
 - `.gitattributes` keeps text files LF. `core.autocrlf` and `core.filemode` are off for this repo, so the Windows and OneDrive sides do not show false changes.
 - Saved configs in `configs/` are git-ignored. Only the folder structure is tracked, through `.gitkeep` files in `configs/`, `configs/matrix/` and `configs/hexaleaf/`.
-- Remote: `origin` = https://github.com/benaminc/led-calculator (public). The computer has no GitHub credentials, so Claude pushes from its cloud copy: commit here, `git bundle create .git/led.bundle main`, copy the bundle to the cloud, fetch it into the clone there and push, then delete the bundle.
+- Remote: `origin` = https://github.com/benaminc/led-calculator (public). The computer has no GitHub credentials, so Claude pushes from its cloud copy: commit here, `git bundle create .git/led-<sha>.bundle origin/main..main` (a fresh file name each time, since the file bridge can serve stale copies of a reused name), copy the bundle to the cloud, fetch it into the clone there and push, then delete the bundle.

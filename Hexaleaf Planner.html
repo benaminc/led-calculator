@@ -104,12 +104,22 @@ details[open] summary { margin-bottom: 10px; }
 .ptable td:first-child { font-family: var(--font-body); color: var(--muted); white-space: normal; }
 .ptable tfoot td { font-weight: 600; color: var(--ink); border-top: 2px solid var(--line); }
 .ptable tfoot td:first-child { color: var(--ink); }
-.measures { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
-.measures ol { margin: 0 0 8px; padding-left: 1.4em; display: grid; gap: 4px; font-size: 0.9rem; }
-.measures li { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.measures li small { color: var(--muted); margin-left: 8px; }
-.measures li button { margin-left: 8px; font: 500 0.75rem var(--font-body); color: var(--muted); background: none; border: 0; cursor: pointer; padding: 0 4px; }
-.measures li button:hover { color: var(--pwr); }
+.layout-grid { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .layout-grid { grid-template-columns: 1fr; } }
+.layout-main { min-width: 0; }
+.msidebar { border-left: 1px solid var(--line); padding-left: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+@media (max-width: 1100px) { .msidebar { border-left: 0; padding-left: 0; border-top: 1px dashed var(--line); padding-top: 12px; } }
+.mhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.mhead h2 { margin: 0; }
+.msidebar ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow-y: auto; }
+.mrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.mrow.on { border-color: var(--accent); background: var(--accent-soft); }
+.mrow .mi { font: 600 0.75rem var(--font-mono); color: var(--muted); min-width: 1.4em; text-align: center; }
+.mrow b { display: block; font: 600 1rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.mrow small { display: block; font: 0.75rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.mrow .mx { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); font: 600 0.9rem var(--font-body); cursor: pointer; line-height: 1; }
+.mrow .mx:hover, .mrow .mx:focus-visible { border-color: var(--pwr); color: var(--pwr); }
+.mempty { font-size: 0.85rem; color: var(--muted); padding: 4px 0; }
 .note { font-size: 0.85rem; color: var(--muted); margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
 .warn { color: var(--pwr); }
 
@@ -262,6 +272,8 @@ footer { font-size: 0.8rem; color: var(--muted); }
     <div class="stack">
       <section class="panel">
         <div class="head-row"><h2>Layout</h2><span class="hint" id="previewNote"></span></div>
+        <div class="layout-grid">
+        <div class="layout-main">
         <div class="editor"><canvas id="cv" width="800" height="480" aria-label="Hex layout editor. Click a dashed slot to add a tile, click a tile to remove it."></canvas></div>
         <div class="legend">
           <span><i style="background:var(--accent)"></i>Data in (tile 1)</span>
@@ -269,10 +281,16 @@ footer { font-size: 0.8rem; color: var(--muted); }
           <span><i style="background:var(--pwr)"></i>Power feed</span>
           <span>Thicker inner ring = deeper tile</span>
         </div>
-        <div class="measures" id="measureBox" hidden>
-          <div class="head-row"><h2>Measurements</h2><div class="btns"><button type="button" class="copy" id="mUndo">Undo last</button><button type="button" class="copy" id="mClear">Clear all</button></div></div>
+        </div>
+        <aside class="msidebar" id="measureBox" aria-label="Measurements">
+          <div class="mhead"><h2>Measurements</h2><span class="hint" id="mCount"></span></div>
           <ol id="measureList"></ol>
+          <div class="btns" id="mBtns">
+            <button type="button" class="copy" id="mUndo">Undo last</button>
+            <button type="button" class="copy" id="mClear">Clear all</button>
+          </div>
           <p class="hint">Outside edge to outside edge, with tiles butted together. Any gap the connectors leave between tiles adds to these numbers.</p>
+        </aside>
         </div>
       </section>
 
@@ -334,7 +352,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let startKey = null;
   let tool = "add";
   let measures = []; // [[ax, ay], [bx, by]] in unrotated unit coords
-  let mA = null, hover = null, lastDraw = null;
+  let mA = null, hover = null, lastDraw = null, mHi = -1;
   let depth = 40;
 
   const key = (q, r) => q + "," + r;
@@ -675,7 +693,12 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("clearBtn").addEventListener("click", () => { tiles = new Map(); startKey = null; measures = []; mA = null; tool = "add"; applyVis(); update(); });
   $("mUndo").addEventListener("click", () => { if (mA) mA = null; else measures.pop(); update(); });
   $("mClear").addEventListener("click", () => { measures = []; mA = null; update(); });
-  $("measureList").addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) { measures.splice(+b.dataset.i, 1); update(); } });
+  $("measureList").addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) { measures.splice(+b.dataset.i, 1); mHi = -1; update(); } });
+  const setHi = (i) => { if (i === mHi) return; mHi = i; document.querySelectorAll(".mrow").forEach((r) => r.classList.toggle("on", +r.dataset.row === i)); redraw(); };
+  $("measureList").addEventListener("pointerover", (e) => { const r = e.target.closest(".mrow"); setHi(r ? +r.dataset.row : -1); });
+  $("measureList").addEventListener("pointerleave", () => setHi(-1));
+  $("measureList").addEventListener("focusin", (e) => { const r = e.target.closest(".mrow"); setHi(r ? +r.dataset.row : -1); });
+  $("measureList").addEventListener("focusout", () => setHi(-1));
   $("chip").addEventListener("change", () => {
     const c = chips[$("chip").value];
     if (c) { $("volts").value = c.v; $("ma").value = c.ma; $("inject").value = c.inject; }
@@ -890,13 +913,15 @@ footer { font-size: 0.8rem; color: var(--muted); }
     if (tT > 24 * 60) ptn += " That's about " + fmt(tT / 60 / 24, 1) + " days of printing back to back.";
     $("printTimeNote").textContent = ptn;
 
-    // measurements list
-    $("measureBox").hidden = !measures.length && tool !== "measure";
+    // measurements sidebar
+    $("mCount").textContent = measures.length ? String(measures.length) : "";
     $("measureList").innerHTML = measures.length
-      ? measures.map((m, i) => { const r = measureMm(m[0], m[1]); return "<li>" + mmTxt(r.d) + " <small>(" + fmt(r.d / 10, 1) + " cm) · ↔ " + mmTxt(r.dx) + " · ↕ " + mmTxt(r.dy) + '</small><button type="button" data-i="' + i + '" aria-label="Remove measurement ' + (i + 1) + '">✕</button></li>'; }).join("")
-      : '<li style="list-style:none;margin-left:-1.4em" class="hint">' + (mA ? "Now click the second point." : "No measurements yet.") + "</li>";
-    $("mUndo").disabled = !measures.length && !mA;
-    $("mClear").disabled = !measures.length && !mA;
+      ? measures.map((m, i) => {
+          const r = measureMm(m[0], m[1]);
+          return '<li class="mrow' + (i === mHi ? " on" : "") + '" data-row="' + i + '"><span class="mi">' + (i + 1) + "</span><span><b>" + mmTxt(r.d) + ' <small style="display:inline">' + fmt(r.d / 10, 1) + " cm</small></b><small>↔ " + fmt(r.dx, 0) + " · ↕ " + fmt(r.dy, 0) + " mm" + '</small></span><button type="button" class="mx" data-i="' + i + '" aria-label="Delete measurement ' + (i + 1) + '" title="Delete">✕</button></li>';
+        }).join("")
+      : '<li class="mempty">' + (mA ? "Now click the second point." : (tool === "measure" ? "Click two points on the layout." : "Pick Measure above, then click two points on the layout.")) + "</li>";
+    $("mBtns").hidden = !measures.length && !mA;
 
     lastDraw = [order, jumps, new Set(feedIdx.map((i) => order[i]))];
     draw(...lastDraw);
@@ -991,7 +1016,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
       g.beginPath(); g.rect(tx, ty, w, h); g.fill(); g.stroke();
       g.fillStyle = strong ? c("--ink") : c("--muted"); g.fillText(txt, tx + w / 2, ty + h / 2 + 0.5);
     };
-    const drawMeasure = (a, b, idx, live, showLegs) => {
+    const drawMeasure = (a, b, idx, live, showLegs, hi) => {
       const [ax, ay] = P(a), [bx, by] = P(b);
       const r = measureMm(a, b);
       const legs = showLegs && r.dx > 1 && r.dy > 1;
@@ -999,7 +1024,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
         g.strokeStyle = c("--muted"); g.lineWidth = 1; g.setLineDash([3, 3]);
         g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, ay); g.lineTo(bx, by); g.stroke(); g.setLineDash([]);
       }
-      g.strokeStyle = c("--ink"); g.lineWidth = 1.75; g.setLineDash(live ? [6, 4] : []);
+      g.strokeStyle = hi ? c("--accent") : c("--ink"); g.lineWidth = hi ? 3 : 1.75; g.setLineDash(live ? [6, 4] : []);
       g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.setLineDash([]);
       g.fillStyle = c("--ink");
       [[ax, ay], [bx, by]].forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.fill(); });
@@ -1008,7 +1033,9 @@ footer { font-size: 0.8rem; color: var(--muted); }
       tag((idx ? idx + " · " : "") + mmTxt(r.d), (ax + bx) / 2, (ay + by) / 2, true);
     };
     const liveOn = isM && mA && hover && Math.hypot(hover[0] - mA[0], hover[1] - mA[1]) > 1e-6;
-    measures.forEach((m, i) => drawMeasure(m[0], m[1], i + 1, false, !liveOn && i === measures.length - 1));
+    const legIdx = mHi >= 0 ? mHi : measures.length - 1;
+    measures.forEach((m, i) => { if (i !== mHi) drawMeasure(m[0], m[1], i + 1, false, !liveOn && i === legIdx, false); });
+    if (mHi >= 0 && measures[mHi]) drawMeasure(measures[mHi][0], measures[mHi][1], mHi + 1, false, true, true);
     if (isM && mA) {
       if (hover && Math.hypot(hover[0] - mA[0], hover[1] - mA[1]) > 1e-6) drawMeasure(mA, hover, 0, true, true);
       const [x, y] = P(mA); g.fillStyle = c("--accent"); g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill();
