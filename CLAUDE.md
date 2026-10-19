@@ -104,7 +104,13 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
   - BehindMonitor config (47 tiles, 8 dead ends): the old version gave 5 jumps and about 2.2 m of jump wire. The current one gives 4 jumps and about 1.0 m, and the exact search proves 4 is the minimum.
   - Over 300 random layouts the search cut jumps by 42% from the same start and by 77% with best start.
   - The "Data path" entry in the legend is a toggle (`pathShow`, saved with the state and configs) that hides the path arrows on the canvas. The tile numbers stay.
-- Power injection lands at the start of a tile: every floor(inject spacing ÷ LEDs per tile) tiles, at least 1. Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
+- Power feeds:
+  - The minimum is ceil(tiles ÷ tiles per feed), where tiles per feed = floor(inject spacing ÷ LEDs per tile), at least 1.
+  - The "Power feeds" input (`feedCount`) can raise the count but never lower it. The box snaps back up to the minimum on change, and is capped at the number of tiles.
+  - Feeds are spread evenly along the data order, at tile indices round(i × n ÷ F), and each feed powers the tiles up to the next one.
+  - Voltage-drop model (`feedPlan`): +V and ground run as separate wires between consecutive tiles in data order (not through each tile's strip). The gauge comes from `linkAwg` (default 18 AWG; `linkOhm` per conductor × 2 for the round trip). Link length is the centre-to-centre distance, jump wires included, and each tile draws its current at the brightness limit. It reports the worst drop, which tile it lands on, and the most current on any one feed.
+  - The Power panel table compares the minimum feed count up to minimum + 3. Ratings: under 3% good, under 6% fine, under 10% slight dimming, otherwise visible dimming. Feed leads from the supply aren't modelled.
+  - Supply sizing and the 85% WLED limit follow the same power rules as the matrix planner.
 - Measure tool (`tool = "measure"`):
   - Click two points to measure between them. Clicks snap to tile corners, edge midpoints and centres within about 16 px; anywhere else gives a free point.
   - It reports the straight-line distance plus its horizontal (↔) and vertical (↕) parts in mm, in screen orientation, so point-top layouts swap them.

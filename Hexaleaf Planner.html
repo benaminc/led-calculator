@@ -131,6 +131,8 @@ details[open] summary { margin-bottom: 10px; }
 .ptable td:first-child { font-family: var(--font-body); color: var(--muted); white-space: normal; }
 .ptable tfoot td { font-weight: 600; color: var(--ink); border-top: 2px solid var(--line); }
 .ptable tfoot td:first-child { color: var(--ink); }
+.ptable tr.pick td { font-weight: 600; color: var(--ink); background: var(--accent-soft); }
+.ptable td.warn { color: var(--pwr); }
 .layout-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; align-items: start; }
 @media (max-width: 1100px) { .layout-grid { grid-template-columns: 1fr; } }
 .layout-main { min-width: 0; }
@@ -305,6 +307,19 @@ footer { font-size: 0.8rem; color: var(--muted); }
         </div>
         <label for="cap">Brightness limit you'll run at (%)<input type="number" id="cap" min="5" max="100" step="5" value="60"></label>
         <label for="inject">Inject power at most every (LEDs)<input type="number" id="inject" min="10" step="10" value="150"></label>
+        <div class="row2">
+          <label for="feedCount">Power feeds<input type="number" id="feedCount" min="1" step="1" value="0"></label>
+          <label for="linkAwg">Power wire between tiles
+            <select id="linkAwg">
+              <option value="22 AWG">22 AWG</option>
+              <option value="20 AWG">20 AWG</option>
+              <option value="18 AWG" selected>18 AWG</option>
+              <option value="16 AWG">16 AWG</option>
+              <option value="14 AWG">14 AWG</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" id="feedHint"></p>
         <p class="hint" id="pitchHint"></p>
       </fieldset>
 
@@ -443,6 +458,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
         <section class="panel">
           <h2>Power</h2>
           <dl id="power"></dl>
+          <div style="overflow-x:auto;margin-top:12px"><table class="ptable" id="feedTable"></table></div>
           <p class="note" id="powerNote"></p>
         </section>
       </div>
@@ -482,7 +498,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mountReach","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mountReach","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","feedCount","linkAwg","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
   const STORE = "hexplanner";
   const chips = {
     ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
@@ -1084,6 +1100,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("mShow").addEventListener("click", () => { measShow = !measShow; update(); });
   $("pathShow").addEventListener("click", () => { pathShow = !pathShow; update(); });
   $("mountShow").addEventListener("click", () => { mountShow = !mountShow; update(); });
+  $("feedCount").addEventListener("change", update); // snap back up to the minimum when the box loses focus
   $("mountAutoBtn").addEventListener("click", () => { mountAuto = true; update(); });
   $("mountRef").addEventListener("change", () => { mountRefSel = $("mountRef").value; update(); });
   $("mountCopy").addEventListener("click", () => {
@@ -1289,11 +1306,38 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const limitMa = Math.round(psuA * 0.85 * 1000 / 100) * 100;
     const injectEvery = Math.max(1, Math.round(num("inject")) || 150);
     const tilesPerFeed = perTile ? Math.max(1, Math.floor(injectEvery / perTile)) : Math.max(1, n);
-    const feedIdx = [];
-    for (let i = 0; i < n; i += tilesPerFeed) feedIdx.push(i);
-    const feeds = Math.max(1, feedIdx.length);
-    const perFeedA = n ? capA * Math.min(tilesPerFeed, n) / n : 0;
     const tileA = perTile * ma / 1000 * cap;
+    // feeds: never fewer than the injection spacing needs, more if asked; spread evenly along the data order
+    const minFeeds = n ? Math.ceil(n / tilesPerFeed) : 0;
+    const fcEl = $("feedCount");
+    let feeds = Math.min(n, Math.max(minFeeds, Math.round(num("feedCount")) || 0));
+    if (document.activeElement !== fcEl && String(feeds) !== fcEl.value) fcEl.value = feeds;
+    fcEl.min = Math.max(1, minFeeds); fcEl.max = Math.max(1, n);
+    $("feedHint").textContent = n ? "At least " + minFeeds + " for injection every " + fmt(injectEvery) + " LEDs. Add more to cut voltage drop; the Power panel shows what each extra feed gains." : "";
+    // voltage drop on the +12 V / ground links between tiles (round trip), feeds at the start of each section
+    const linkOhm = { "22 AWG": 0.053, "20 AWG": 0.033, "18 AWG": 0.021, "16 AWG": 0.013, "14 AWG": 0.0083 }[$("linkAwg").value] || 0.021;
+    const linkM = order.map((k, i) => {
+      if (!i) return 0;
+      const a = tiles.get(order[i - 1]), b = tiles.get(k), [ax, ay] = center(a.q, a.r), [bx, by] = center(b.q, b.r);
+      return Math.hypot(ax - bx, ay - by) * outerSide / 1000;
+    });
+    const feedStarts = (F) => { const f = []; for (let i = 0; i < F; i++) f.push(Math.round(i * n / F)); return f; };
+    function feedPlan(F) {
+      const st = feedStarts(F);
+      let worst = 0, at = 0, maxA = 0;
+      st.forEach((a, si) => {
+        const b = si + 1 < st.length ? st[si + 1] : n;
+        maxA = Math.max(maxA, (b - a) * tileA);
+        let v = 0;
+        for (let k = a + 1; k < b; k++) { v += linkOhm * 2 * linkM[k] * (b - k) * tileA; if (v > worst) { worst = v; at = k; } }
+      });
+      return { st, worst, at, maxA };
+    }
+    const fplan = n ? feedPlan(feeds) : { st: [], worst: 0, at: 0, maxA: 0 };
+    const feedIdx = fplan.st;
+    const perFeedA = fplan.maxA;
+    const dropTxt = (v) => fmt(v, 2) + " V (" + fmt(v / volts * 100, 1) + "%)";
+    const dropWord = (pct) => pct < 3 ? "good" : pct < 6 ? "fine" : pct < 10 ? "slight dimming at full white" : "visible dimming and colour shift";
 
     // data outputs: 800 LEDs per output, keep to the controller's 4
     const outputs = Math.max(1, Math.ceil(total / 800));
@@ -1366,11 +1410,22 @@ footer { font-size: 0.8rem; color: var(--muted); }
       row("Worst case (full white)", fmt(peakA, 1) + " A · " + fmt(peakA * volts) + " W") +
       row("At " + fmt(cap * 100) + "% limit", fmt(capA, 1) + " A") +
       row("Supply with 20% headroom", fmt(psuA, psuA % 1 ? 1 : 0) + " A") +
-      row("Power feeds", fmt(n ? feeds : 0) + (n ? " · every " + tilesPerFeed + (tilesPerFeed === 1 ? " tile" : " tiles") : "")) +
-      row("Current per feed", fmt(perFeedA, 1) + " A → " + awg(perFeedA)) +
+      row("Power feeds", fmt(n ? feeds : 0) + (n ? (feeds > minFeeds ? " (minimum " + minFeeds + ")" : " · the minimum") : "")) +
+      row("Most current on one feed", fmt(perFeedA, 1) + " A → " + awg(perFeedA) + " lead") +
+      (n > 1 ? row("Worst drop on " + $("linkAwg").value + " links", dropTxt(fplan.worst) + " at tile #" + (fplan.at + 1)) : "") +
       row("Refresh, 1 data pin", "≈ " + fmt(Math.min(fps1, 250)) + " fps") +
       (outputs > 1 ? row("Split into " + outputs + " outputs", "≈ " + fmt(Math.min(fpsN, 250)) + " fps") : "");
+    // what each extra feed buys
+    if (n > 1) {
+      const rowsF = [];
+      for (let F = minFeeds; F <= Math.min(n, Math.max(minFeeds + 3, feeds)); F++) {
+        const pl = feedPlan(F), pct = pl.worst / volts * 100;
+        rowsF.push('<tr' + (F === feeds ? ' class="pick"' : "") + "><td>" + F + (F === minFeeds ? " (min)" : "") + "</td><td>" + fmt(pl.maxA, 1) + " A</td><td" + (pct >= 6 ? ' class="warn"' : "") + ">" + dropTxt(pl.worst) + "</td><td>" + dropWord(pct) + "</td></tr>");
+      }
+      $("feedTable").innerHTML = "<thead><tr><th>Feeds</th><th>Max per feed</th><th>Worst drop</th><th>At full brightness</th></tr></thead><tbody>" + rowsF.join("") + "</tbody>";
+    } else $("feedTable").innerHTML = "";
     let pn = "Set WLED's current limit to about " + fmt(limitMa) + " mA so it never asks for more than the supply gives.";
+    if (n > 1) pn += " Drop is for +" + fmt(volts) + " V and ground run as their own " + $("linkAwg").value + " wires from tile to tile (not through each tile's strip), at your " + fmt(cap * 100) + "% brightness limit, with feeds spread evenly along the data path. Feed leads from the supply aren't counted; size them by the current per feed.";
     if (feeds > 1) pn += " Feeds land at the start of a tile (red rings), so run each one from the supply to that tile's data-in corner.";
     if (perTile > injectEvery) pn += " One tile has more LEDs than your injection spacing; every tile gets its own feed.";
     if (capA > 15) pn += " That's over the GLEDOPTO Elite's 15 A total, so feed every injection point straight from the supply and let the controller carry data only.";
