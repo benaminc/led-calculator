@@ -113,8 +113,16 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - Simulate mode (the "▶ Simulate" button in the Layout header; `simOn`, not saved):
   - Animates WLED-style effects on the layout at 60 fps (`requestAnimationFrame`, `simFrame` called from `draw`). Editing is disabled, and ghosts, the legend, measurements and the data path are hidden.
   - LEDs: `perTile` per tile, spaced evenly around the inner wall (hex at 0.78 of the circumradius). They follow the solved data order, and each tile starts at the corner nearest the previous tile.
-  - Effects (`fxColor`): Rainbow, Colorloop, Rainbow per tile, Solid, Breathe, Wipe, Theater chase, Scanner, Twinkle and Fire.
-  - Controls (all in `ids`, so saved): colour, speed, brightness 0–255, "Effect runs along" (data order, left to right or top to bottom) and "Diffused lids".
+  - Effects (`fxFrame`, which returns a whole frame), grouped like WLED's list:
+    - Classic: Solid, Breathe, Heartbeat, Colorloop, Rainbow, Rainbow per tile, Palette, Gradient, Colorwaves.
+    - Motion: Wipe, Theater chase, Running, Scanner, Dual scan, Comet, Meteor, Sinelon, Juggle.
+    - Sparkle: Twinkle, Sparkle, Glitter, Fireworks, Candle, Lightning, Police.
+    - Nature: Fire, Pacifica, Aurora, Plasma, Ripple.
+  - Stateful effects (`STATEFUL`) draw into `sim.buf`, which fades each frame at a per-effect rate. It is reset when the effect or LED count changes.
+  - Ripple and Plasma use LED positions rather than order.
+  - Palettes (`PALS`, 16 stops each, `palColor`): Rainbow, Party, Ocean, Forest, Lava, Heat, Sunset, Aurora, Pastel, and Colour (built from the colour picker). Fire always uses Heat.
+  - `FX_USES` greys out the Colour and Palette controls an effect doesn't use.
+  - Controls (all in `ids`, so saved): palette, colour, speed, brightness 0–255, "Effect runs along" (data order, left to right or top to bottom) and "Diffused lids".
   - Diffused lids fill each tile with a radial glow of its LEDs' average colour. With them off, the bare LEDs are drawn with a small halo.
   - Brightness limiter like WLED's: a frame's current = Σ ma × (r+g+b)/765 × brightness. Above the planner's WLED current limit, every LED is scaled down, and the readout shows the live amps and the limiter percentage.
   - Uses the `--sim-bg` / `--sim-tile` tokens (dark in both themes). Shapes stay visible as dashed outlines.

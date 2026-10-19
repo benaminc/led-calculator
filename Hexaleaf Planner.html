@@ -87,6 +87,7 @@ canvas { display: block; width: 100%; height: auto; cursor: pointer; }
 .simbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
 .simbar label { font-size: 0.78rem; }
 .simbar select { padding: 5px 7px; font-size: 0.85rem; }
+.simbar select:disabled, .simbar input:disabled { opacity: 0.4; }
 .simbar input[type="range"] { width: 120px; accent-color: var(--accent); }
 .simbar input[type="color"] { width: 44px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .simbar .check { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 0.85rem; }
@@ -340,16 +341,58 @@ footer { font-size: 0.8rem; color: var(--muted); }
         <div class="simbar" id="simBar" hidden>
           <label for="simFx">Effect
             <select id="simFx">
+              <optgroup label="Classic">
+                <option value="solid">Solid</option>
+                <option value="breathe">Breathe</option>
+                <option value="heartbeat">Heartbeat</option>
+                <option value="colorloop">Colorloop</option>
+                <option value="rainbow" selected>Rainbow</option>
+                <option value="tiles">Rainbow per tile</option>
+                <option value="palette">Palette</option>
+                <option value="gradient">Gradient</option>
+                <option value="colorwaves">Colorwaves</option>
+              </optgroup>
+              <optgroup label="Motion">
+                <option value="wipe">Wipe</option>
+                <option value="chase">Theater chase</option>
+                <option value="running">Running</option>
+                <option value="scan">Scanner</option>
+                <option value="dualscan">Dual scan</option>
+                <option value="comet">Comet</option>
+                <option value="meteor">Meteor</option>
+                <option value="sinelon">Sinelon</option>
+                <option value="juggle">Juggle</option>
+              </optgroup>
+              <optgroup label="Sparkle">
+                <option value="twinkle">Twinkle</option>
+                <option value="sparkle">Sparkle</option>
+                <option value="glitter">Glitter</option>
+                <option value="fireworks">Fireworks</option>
+                <option value="candle">Candle</option>
+                <option value="lightning">Lightning</option>
+                <option value="police">Police</option>
+              </optgroup>
+              <optgroup label="Nature">
+                <option value="fire">Fire</option>
+                <option value="pacifica">Pacifica</option>
+                <option value="aurora">Aurora</option>
+                <option value="plasma">Plasma</option>
+                <option value="ripple">Ripple</option>
+              </optgroup>
+            </select>
+          </label>
+          <label for="simPal">Palette
+            <select id="simPal">
               <option value="rainbow" selected>Rainbow</option>
-              <option value="colorloop">Colorloop</option>
-              <option value="tiles">Rainbow per tile</option>
-              <option value="solid">Solid</option>
-              <option value="breathe">Breathe</option>
-              <option value="wipe">Wipe</option>
-              <option value="chase">Theater chase</option>
-              <option value="scan">Scanner</option>
-              <option value="twinkle">Twinkle</option>
-              <option value="fire">Fire</option>
+              <option value="party">Party</option>
+              <option value="ocean">Ocean</option>
+              <option value="forest">Forest</option>
+              <option value="lava">Lava</option>
+              <option value="heat">Heat</option>
+              <option value="sunset">Sunset</option>
+              <option value="aurora">Aurora</option>
+              <option value="pastel">Pastel</option>
+              <option value="primary">Colour</option>
             </select>
           </label>
           <label for="simColor">Colour<input type="color" id="simColor" value="#ff9a3c"></label>
@@ -421,7 +464,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const ids = ["simFx","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
+  const ids = ["simFx","simPal","simColor","simSpeed","simBri","simMap","simDiff","shName","shKind","shW","shH","orient","mounts","inner","outer","wrap","radius","density","chip","volts","ma","cap","inject","price","spool","overhead","g_lid","t_lid","g_w25","t_w25","g_w30","t_w30","g_w35","t_w35","g_w40","t_w40","g_s1","t_s1","g_s2","t_s2","g_s3","t_s3"];
   const STORE = "hexplanner";
   const chips = {
     ws2812b: { v: 5, ma: 60, name: "WS281x", order: "GRB", inject: 150 },
@@ -1311,24 +1354,128 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
   const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ""); const v = m ? parseInt(m[1], 16) : 0xff9a3c; return [v >> 16 & 255, v >> 8 & 255, v & 255]; };
   const rnd = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-  // one LED's colour: k = its place along the effect (0..1), i = LED number, ti / nt = tile number / count, t = seconds × speed
-  function fxColor(fx, k, i, n, ti, nt, t, col) {
+  // WLED-style palettes (16 stops each, wrapped). "primary" is built from the colour picker.
+  const PALS = {
+    party: ["#5500ab","#84007c","#b5004b","#e5001b","#e81700","#b84700","#ab7700","#abab00","#ab5500","#dd2200","#f2000e","#c2003e","#8f0071","#5f00a1","#2f00d0","#0007f9"],
+    ocean: ["#191970","#00008b","#191970","#000080","#00008b","#0000cd","#2e8b57","#008080","#5f9ea0","#0000ff","#008b8b","#6495ed","#7fffd4","#2e8b57","#00ffff","#87cefa"],
+    forest: ["#006400","#006400","#556b2f","#006400","#008000","#228b22","#6b8e23","#008000","#2e8b57","#66cdaa","#32cd32","#9acd32","#90ee90","#7cfc00","#66cdaa","#228b22"],
+    lava: ["#000000","#800000","#000000","#800000","#8b0000","#800000","#8b0000","#8b0000","#8b0000","#ff0000","#ffa500","#ffffff","#ffa500","#ff0000","#8b0000","#000000"],
+    heat: ["#000000","#330000","#660000","#990000","#cc0000","#ff0000","#ff3300","#ff6600","#ff9900","#ffcc00","#ffff00","#ffff33","#ffff66","#ffff99","#ffffcc","#ffffff"],
+    sunset: ["#780000","#b31600","#ff6800","#a7166f","#64009f","#2b0030","#64009f","#a7166f","#ff6800","#ffc600","#ff6800","#b31600","#780000","#4b0010","#780000","#b31600"],
+    aurora: ["#011e0f","#00591f","#00a35c","#11d18b","#00ffaa","#08bfa0","#1688c8","#2a3fd3","#5216b8","#2a3fd3","#1688c8","#08bfa0","#00ffaa","#11d18b","#00a35c","#00591f"],
+    pastel: ["#ffb3ba","#ffdfba","#ffffba","#baffc9","#bae1ff","#d5baff","#ffbaf2","#ffb3ba","#ffdfba","#ffffba","#baffc9","#bae1ff","#d5baff","#ffbaf2","#e0e0ff","#ffb3ba"]
+  };
+  const palRgb = {};
+  Object.keys(PALS).forEach((k) => { palRgb[k] = PALS[k].map(hexRgb); });
+  function palColor(pal, x, col) {
+    x = ((x % 1) + 1) % 1;
+    if (pal === "rainbow") return hsv(x);
+    const stops = pal === "primary" ? [col, col.map((c) => c * 0.25), col, col.map((c) => c * 0.55)] : palRgb[pal] || palRgb.party;
+    const f = x * stops.length, i = Math.floor(f), u = f - i, a = stops[i % stops.length], b = stops[(i + 1) % stops.length];
+    return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+  }
+  // which controls each effect listens to (the others are greyed out)
+  const FX_USES = {
+    solid: "c", breathe: "c", heartbeat: "c", colorloop: "", rainbow: "", tiles: "", palette: "p", gradient: "p", colorwaves: "p",
+    wipe: "c", chase: "c", running: "c", scan: "c", dualscan: "c", comet: "p", meteor: "c", sinelon: "p", juggle: "p",
+    twinkle: "p", sparkle: "c", glitter: "", fireworks: "p", candle: "c", lightning: "", police: "",
+    fire: "", pacifica: "", aurora: "", plasma: "p", ripple: "p"
+  };
+  // effects that keep a fading frame buffer between frames
+  const STATEFUL = new Set(["comet", "meteor", "sinelon", "juggle", "sparkle", "glitter", "fireworks", "ripple", "lightning"]);
+  const smooth = (i, t) => 0.5 + 0.25 * Math.sin(i * 0.37 + t * 3.1) + 0.15 * Math.sin(i * 1.13 - t * 5.3) + 0.1 * Math.sin(i * 0.071 + t * 1.7);
+  // one frame of an effect. k[i] = LED's place along the effect (0..1), pos[i] = its position (display units),
+  // ti[i] = its tile, t = effect time, dt = effect time since last frame. Returns [r, g, b] per LED, 0..255.
+  function fxFrame(fx, n, k, pos, ti, nt, t, dt, col, pal) {
+    const out = new Array(n);
+    const P = (x) => palColor(pal, x, col);
+    const dim = (c, b) => [c[0] * b, c[1] * b, c[2] * b];
+    // stateful effects draw into sim.buf, which fades a little each frame
+    let buf = null;
+    if (STATEFUL.has(fx)) {
+      if (!sim.buf || sim.buf.length !== n * 3 || sim.bufFx !== fx) { sim.buf = new Float32Array(n * 3); sim.bufFx = fx; sim.st = {}; }
+      buf = sim.buf;
+      const fadeRate = { comet: 3.5, meteor: 0, sinelon: 2.5, juggle: 3, sparkle: 9, glitter: 12, fireworks: 2.2, ripple: 0, lightning: 10 }[fx];
+      if (fadeRate) { const f = Math.exp(-fadeRate * dt); for (let i = 0; i < buf.length; i++) buf[i] *= f; }
+    }
+    const add = (i, c, a = 1) => { if (i < 0 || i >= n) return; buf[i * 3] = Math.min(255, buf[i * 3] + c[0] * a); buf[i * 3 + 1] = Math.min(255, buf[i * 3 + 1] + c[1] * a); buf[i * 3 + 2] = Math.min(255, buf[i * 3 + 2] + c[2] * a); };
+    const st = sim.st || (sim.st = {});
     switch (fx) {
-      case "solid": return col;
-      case "rainbow": return hsv(k - t * 0.15);
-      case "colorloop": return hsv(t * 0.08);
-      case "tiles": return hsv(ti / Math.max(1, nt) - t * 0.1);
-      case "breathe": { const b = 0.08 + 0.92 * (0.5 - 0.5 * Math.cos(t * 1.6)); return col.map((c) => c * b); }
-      case "wipe": { const p = (t * 0.25) % 2; const on = p < 1 ? k <= p : k > p - 1; return on ? col : [0, 0, 0]; }
-      case "chase": return (i + Math.floor(t * 6)) % 3 === 0 ? col : [0, 0, 0];
-      case "scan": { const p = 0.5 - 0.5 * Math.cos(t * 1.2), dd = Math.abs(k - p) * n; const b = Math.max(0, 1 - dd / 4); return col.map((c) => c * b * b); }
-      case "twinkle": { const ph = rnd(i) * 6.283, rate = 0.6 + rnd(i + 7) * 1.4; const b = Math.pow(Math.max(0, Math.sin(t * rate + ph)), 6); return col.map((c) => c * b); }
-      case "fire": {
-        const h = Math.max(0, Math.min(1, 0.55 + 0.25 * Math.sin(i * 0.37 + t * 3.1) + 0.2 * Math.sin(i * 1.13 - t * 5.3) + 0.15 * Math.sin(i * 0.071 + t * 1.7) - 0.25 * rnd(i + Math.floor(t * 8))));
-        return h < 0.4 ? [h / 0.4 * 200, 0, 0] : h < 0.8 ? [200 + (h - 0.4) / 0.4 * 55, (h - 0.4) / 0.4 * 160, 0] : [255, 160 + (h - 0.8) / 0.2 * 95, (h - 0.8) / 0.2 * 140];
+      case "solid": for (let i = 0; i < n; i++) out[i] = col; return out;
+      case "breathe": { const b = 0.08 + 0.92 * (0.5 - 0.5 * Math.cos(t * 1.6)); for (let i = 0; i < n; i++) out[i] = dim(col, b); return out; }
+      case "heartbeat": { const ph = (t * 0.8) % 1; const b = 0.12 + Math.exp(-Math.pow((ph - 0.08) / 0.07, 2)) + 0.65 * Math.exp(-Math.pow((ph - 0.3) / 0.07, 2)); for (let i = 0; i < n; i++) out[i] = dim(col, Math.min(1, b)); return out; }
+      case "colorloop": { const c = hsv(t * 0.08); for (let i = 0; i < n; i++) out[i] = c; return out; }
+      case "rainbow": for (let i = 0; i < n; i++) out[i] = hsv(k[i] - t * 0.15); return out;
+      case "tiles": for (let i = 0; i < n; i++) out[i] = hsv(ti[i] / Math.max(1, nt) - t * 0.1); return out;
+      case "palette": for (let i = 0; i < n; i++) out[i] = P(k[i] - t * 0.1); return out;
+      case "gradient": for (let i = 0; i < n; i++) out[i] = P(k[i] * 0.94); return out;
+      case "colorwaves": for (let i = 0; i < n; i++) out[i] = dim(P(k[i] * 1.5 + 0.3 * Math.sin(t * 0.7 + k[i] * 6)), 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(k[i] * 14 - t * 2.2))); return out;
+      case "wipe": { const p = (t * 0.25) % 2; for (let i = 0; i < n; i++) out[i] = (p < 1 ? k[i] <= p : k[i] > p - 1) ? col : [0, 0, 0]; return out; }
+      case "chase": for (let i = 0; i < n; i++) out[i] = (i + Math.floor(t * 6)) % 3 === 0 ? col : [0, 0, 0]; return out;
+      case "running": for (let i = 0; i < n; i++) out[i] = dim(col, Math.pow(0.5 + 0.5 * Math.sin(k[i] * n * 0.45 - t * 5), 2)); return out;
+      case "scan": case "dualscan": {
+        const p = 0.5 - 0.5 * Math.cos(t * 1.2);
+        for (let i = 0; i < n; i++) {
+          const w = Math.max(4, n * 0.04);
+          let d1 = Math.abs(k[i] - p) * n; if (fx === "dualscan") d1 = Math.min(d1, Math.abs(k[i] - (1 - p)) * n);
+          const b = Math.max(0, 1 - d1 / w); out[i] = dim(col, b * b);
+        }
+        return out;
+      }
+      case "twinkle": for (let i = 0; i < n; i++) { const b = Math.pow(Math.max(0, Math.sin(t * (0.6 + rnd(i + 7) * 1.4) + rnd(i) * 6.283)), 6); out[i] = dim(P(rnd(i + 3)), b); } return out;
+      case "candle": for (let i = 0; i < n; i++) { const fl = 0.55 + 0.45 * Math.max(0, Math.min(1, smooth(i * 3.1 + ti[i] * 11, t * 1.6) - 0.15 * rnd(i + Math.floor(t * 9)))); out[i] = dim(col, fl); } return out;
+      case "police": { const half = Math.floor(t * 2.5) % 2; const flash = (t * 10) % 1 < 0.6; for (let i = 0; i < n; i++) { const left = k[i] < 0.5; out[i] = (left === !!half) && flash ? (left ? [255, 0, 0] : [0, 40, 255]) : [0, 0, 0]; } return out; }
+      case "fire": for (let i = 0; i < n; i++) { const h = Math.max(0, Math.min(1, smooth(i, t) + 0.05 - 0.25 * rnd(i + Math.floor(t * 8)))); out[i] = palColor("heat", h * 0.93, col); } return out;
+      case "pacifica": for (let i = 0; i < n; i++) {
+          const x = k[i] * 6, w1 = 0.5 + 0.5 * Math.sin(x * 2.1 + t * 0.9), w2 = 0.5 + 0.5 * Math.sin(x * 3.3 - t * 1.3 + 1), w3 = 0.5 + 0.5 * Math.sin(x * 5.7 + t * 2.1);
+          const cap = Math.pow(w1 * w2 * w3, 3) * 255;
+          out[i] = [Math.min(255, 2 + cap * 0.6), Math.min(255, 30 + 70 * w2 + cap), Math.min(255, 70 + 120 * w1 + cap)];
+        } return out;
+      case "aurora": for (let i = 0; i < n; i++) {
+          const band = Math.max(0, smooth(k[i] * 40, t * 0.25) - 0.35) / 0.65;
+          out[i] = dim(palColor("aurora", k[i] * 0.6 + 0.15 * Math.sin(t * 0.3 + k[i] * 4), col), 0.15 + 0.85 * band);
+        } return out;
+      case "plasma": for (let i = 0; i < n; i++) { const [x, y] = pos[i]; out[i] = P(0.5 + 0.25 * Math.sin(x * 0.9 + t) + 0.25 * Math.sin(y * 1.1 - t * 1.3) + 0.15 * Math.sin((x + y) * 0.6 + t * 0.7)); } return out;
+      case "comet": { const head = ((t * 0.18) % 1) * n; for (let j = -1; j <= 1; j++) add(Math.round(head) + j, P(t * 0.05), j ? 0.5 : 1); break; }
+      case "meteor": {
+        const head = ((t * 0.2) % 1) * n;
+        for (let i = 0; i < n; i++) if (Math.random() < 0.6) { const f = 0.55 + Math.random() * 0.4; buf[i * 3] *= f; buf[i * 3 + 1] *= f; buf[i * 3 + 2] *= f; }
+        for (let j = 0; j < 3; j++) { const h = Math.round(head) - j; if (h >= 0 && h < n) { buf[h * 3] = col[0]; buf[h * 3 + 1] = col[1]; buf[h * 3 + 2] = col[2]; } }
+        break;
+      }
+      case "sinelon": add(Math.round((0.5 + 0.5 * Math.sin(t * 0.9)) * (n - 1)), P(t * 0.05)); break;
+      case "juggle": for (let j = 0; j < 8; j++) add(Math.round((0.5 + 0.5 * Math.sin(t * (j + 7) * 0.12)) * (n - 1)), P(j / 8), 0.8); break;
+      case "sparkle": case "glitter": {
+        const want = Math.max(1, Math.round(n * 0.25 * dt * 4));
+        for (let j = 0; j < want; j++) if (Math.random() < 0.7) add(Math.floor(Math.random() * n), [255, 255, 255]);
+        for (let i = 0; i < n; i++) { const base = fx === "sparkle" ? dim(col, 0.25) : hsv(k[i] - t * 0.15); out[i] = [Math.min(255, base[0] + buf[i * 3]), Math.min(255, base[1] + buf[i * 3 + 1]), Math.min(255, base[2] + buf[i * 3 + 2])]; }
+        return out;
+      }
+      case "fireworks": {
+        st.next = st.next || 0;
+        if (t >= st.next) { const c = Math.floor(Math.random() * n), cc = P(Math.random()), r = Math.max(3, Math.round(n * 0.012)); for (let j = -r; j <= r; j++) add(c + j, cc, 1 - Math.abs(j) / (r + 1)); st.next = t + 0.05 + Math.random() * 0.2; }
+        break;
+      }
+      case "lightning": {
+        st.next = st.next || 0;
+        if (t >= st.next) { st.flashes = 1 + Math.floor(Math.random() * 3); st.a = Math.floor(Math.random() * n); st.len = Math.floor(n * (0.2 + Math.random() * 0.6)); st.fl = t; st.next = t + 1.2 + Math.random() * 2.5; }
+        if (st.flashes && t >= st.fl) { for (let i = st.a; i < st.a + st.len; i++) add(i % n, [255, 255, 255], 0.6 + Math.random() * 0.4); st.flashes--; st.fl = t + 0.06 + Math.random() * 0.12; }
+        break;
+      }
+      case "ripple": {
+        st.drops = st.drops || []; st.next = st.next || 0;
+        if (t >= st.next) { const i = Math.floor(Math.random() * n); st.drops.push({ x: pos[i][0], y: pos[i][1], t0: t, c: P(Math.random()) }); st.next = t + 0.35 + Math.random() * 0.6; }
+        st.drops = st.drops.filter((d) => t - d.t0 < 3);
+        buf.fill(0);
+        st.drops.forEach((d) => {
+          const r = (t - d.t0) * 2.6, fade = Math.max(0, 1 - (t - d.t0) / 3);
+          for (let i = 0; i < n; i++) { const dd = Math.abs(Math.hypot(pos[i][0] - d.x, pos[i][1] - d.y) - r); if (dd < 1.4) add(i, d.c, Math.min(1, 1.6 * (1 - dd / 1.4)) * fade); }
+        });
+        break;
       }
     }
-    return col;
+    for (let i = 0; i < n; i++) out[i] = [buf[i * 3], buf[i * 3 + 1], buf[i * 3 + 2]];
+    return out;
   }
   // LED positions (unrotated unit coords) around each tile's inner wall, starting at the corner nearest the previous tile
   function ledLayout(order, perTile) {
@@ -1360,7 +1507,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     $("simBar").hidden = !on;
     document.querySelector(".layout-main .legend").hidden = on;
     cancelAnimationFrame(simRaf);
-    if (on) { sim.t0 = performance.now(); simRaf = requestAnimationFrame(simLoop); }
+    if (on) { sim.t0 = performance.now(); sim.lastT = 0; sim.buf = null; simRaf = requestAnimationFrame(simLoop); }
     else redraw();
   }
   $("simBtn").addEventListener("click", () => setSim(!simOn));
@@ -1378,7 +1525,11 @@ footer { font-size: 0.8rem; color: var(--muted); }
       const lo = Math.min(...v), hi = Math.max(...v);
       ks = v.map((x) => (x - lo) / Math.max(1e-9, hi - lo));
     }
-    const raw = leds.map((l, i) => fxColor(fx, ks[i], i, n, l.ti, nt, t, col));
+    const nowT = (performance.now() - sim.t0) / 1000;
+    const dt = Math.min(0.1, Math.max(0, nowT - (sim.lastT || nowT))) * speed;
+    sim.lastT = nowT;
+    const pos = leds.map((l) => rot(l.p));
+    const raw = fxFrame(fx, n, ks, pos, leds.map((l) => l.ti), nt, t, dt, col, $("simPal").value);
     // WLED's brightness limiter: full white on one LED draws ma; scale down when the frame would pass the limit
     const bri = Math.max(1, num("simBri")) / 255;
     let mA = 0; raw.forEach((r) => { mA += simCfg.ma * (r[0] + r[1] + r[2]) / 765; });
@@ -1419,6 +1570,9 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const shown = mA * scale;
     $("simAmps").textContent = n ? "≈ " + fmt(shown / 1000, 2) + " A now" + (scale < 1 ? " · limiter at " + fmt(scale * 100, 0) + "% (limit " + fmt(limit / 1000, 1) + " A)" : simCfg.limitMa ? " of " + fmt(limit / 1000, 1) + " A limit" : "") : "Add some tiles";
     $("simAmps").classList.toggle("warn", scale < 1);
+    const uses = FX_USES[fx] || "";
+    $("simColor").disabled = !uses.includes("c") && !($("simPal").value === "primary" && uses.includes("p"));
+    $("simPal").disabled = !uses.includes("p");
   }
 
   function draw(order, jumps, feedSet) {
