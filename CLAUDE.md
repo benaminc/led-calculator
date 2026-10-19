@@ -107,6 +107,7 @@ These are typical figures. The real value is `mA per pixel = W/m ÷ V ÷ pixels 
 - Power feeds:
   - The minimum is ceil(tiles ÷ tiles per feed), where tiles per feed = floor(inject spacing ÷ LEDs per tile), at least 1.
   - The "Power feeds" input (`feedCount`) can raise the count but never lower it. The box snaps back up to the minimum on change, and is capped at the number of tiles.
+  - What's kept is `feedExtra`, the feeds added above the minimum (saved in the state; older saves derive it from `feedCount`). The count is minimum + `feedExtra`, so it follows the minimum when the chip, density or injection spacing changes. Earlier, the box kept the highest count it had shown, so a 5 V chip's minimum stuck after switching back to WS2815.
   - Feeds are spread evenly along the data order, at tile indices round(i × n ÷ F), and each feed powers the tiles up to the next one.
   - Voltage-drop model (`feedPlan`): +V and ground run as separate wires between consecutive tiles in data order (not through each tile's strip). The gauge comes from `linkAwg` (default 18 AWG; `linkOhm` per conductor × 2 for the round trip). Link length is the centre-to-centre distance, jump wires included, and each tile draws its current at the brightness limit. It reports the worst drop, which tile it lands on, and the most current on any one feed.
   - The Power panel table compares the minimum feed count up to minimum + 3. Ratings: under 3% good, under 6% fine, under 10% slight dimming, otherwise visible dimming. Feed leads from the supply aren't modelled.

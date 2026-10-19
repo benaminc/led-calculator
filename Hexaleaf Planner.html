@@ -535,7 +535,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   let measures = []; // { a: [x, y], b: [x, y], legs } in unrotated unit coords
   let shapes = [];   // { name, kind: "rect" | "circle", w, h, x, y } in mm; x, y = centre in screen orientation, from tile 0's centre
   let mA = null, hover = null, lastDraw = null, mHi = -1, sHi = -1, drag = null, measShow = true, pathShow = true;
-  let mountAuto = true, mountKeys = [], mountShow = true, mountRefSel = "tl", supplyRefSel = "t1"; // mountKeys = 3-way corner keys
+  let mountAuto = true, mountKeys = [], mountShow = true, mountRefSel = "tl", supplyRefSel = "t1", feedExtra = null, lastMinFeeds = 0; // mountKeys = 3-way corner keys
   let mountOrder = [], unreachedSet = new Set();
   let depth = 40;
 
@@ -547,7 +547,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
   }
 
   function getState() {
-    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow, mountAuto, mountKeys: mountKeys.slice(), mountShow, mountRef: mountRefSel, supplyRef: supplyRefSel };
+    const o = { v: 2, tool, depth, start: startKey, tiles: [...tiles.values()].map((t) => ({ q: t.q, r: t.r, d: t.d })), measures: measures.map((m) => ({ a: m.a.slice(), b: m.b.slice(), legs: !!m.legs })), shapes: shapes.map((x) => ({ ...x })), measShow, pathShow, mountAuto, mountKeys: mountKeys.slice(), mountShow, mountRef: mountRefSel, supplyRef: supplyRefSel, feedExtra: feedExtra || 0 };
     ids.forEach((k) => { const el = $(k); o[k] = el.type === "checkbox" ? el.checked : el.value; });
     return o;
   }
@@ -577,6 +577,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
     mountShow = saved.mountShow !== false;
     mountRefSel = typeof saved.mountRef === "string" ? saved.mountRef : "tl";
     supplyRefSel = typeof saved.supplyRef === "string" ? saved.supplyRef : "t1";
+    feedExtra = isFinite(saved.feedExtra) && saved.feedExtra >= 0 ? Math.round(+saved.feedExtra) : null; // null: older save, derive from feedCount
     shapes = Array.isArray(saved.shapes) ? saved.shapes.filter((x) => x && isFinite(x.x) && isFinite(x.y) && +x.w > 0)
       .map((x) => ({ name: String(x.name || "Shape").slice(0, 40), kind: x.kind === "circle" ? "circle" : "rect", w: +x.w, h: +(x.h || x.w), x: +x.x, y: +x.y })) : [];
     mA = null;
@@ -1118,7 +1119,11 @@ footer { font-size: 0.8rem; color: var(--muted); }
   $("mShow").addEventListener("click", () => { measShow = !measShow; update(); });
   $("pathShow").addEventListener("click", () => { pathShow = !pathShow; update(); });
   $("mountShow").addEventListener("click", () => { mountShow = !mountShow; update(); });
-  $("feedCount").addEventListener("change", update); // snap back up to the minimum when the box loses focus
+  // the box shows the total, but what's kept is how many feeds were added above the minimum,
+  // so the count follows the minimum when the chip, density or injection spacing changes
+  const takeFeeds = () => { const v = Math.round(num("feedCount")); feedExtra = isFinite(v) ? Math.max(0, v - lastMinFeeds) : 0; };
+  $("feedCount").addEventListener("input", takeFeeds);
+  $("feedCount").addEventListener("change", () => { takeFeeds(); update(); }); // snap back up to the minimum when the box loses focus
   $("mountAutoBtn").addEventListener("click", () => { mountAuto = true; update(); });
   $("mountRef").addEventListener("change", () => { mountRefSel = $("mountRef").value; update(); });
   $("supplyRef").addEventListener("change", () => { supplyRefSel = $("supplyRef").value; update(); });
@@ -1335,7 +1340,9 @@ footer { font-size: 0.8rem; color: var(--muted); }
     // feeds: never fewer than the injection spacing needs, more if asked; spread evenly along the data order
     const minFeeds = n ? Math.ceil(n / tilesPerFeed) : 0;
     const fcEl = $("feedCount");
-    let feeds = Math.min(n, Math.max(minFeeds, Math.round(num("feedCount")) || 0));
+    if (feedExtra === null && n) feedExtra = Math.max(0, (Math.round(num("feedCount")) || 0) - minFeeds);
+    let feeds = Math.min(n, minFeeds + (feedExtra || 0));
+    lastMinFeeds = minFeeds;
     if (document.activeElement !== fcEl && String(feeds) !== fcEl.value) fcEl.value = feeds;
     fcEl.min = Math.max(1, minFeeds); fcEl.max = Math.max(1, n);
     $("feedHint").textContent = n ? "At least " + minFeeds + " for injection every " + fmt(injectEvery) + " LEDs. Add more to cut voltage drop; the Power panel shows what each extra feed gains." : "";
