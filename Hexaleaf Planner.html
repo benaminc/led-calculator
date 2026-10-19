@@ -172,6 +172,12 @@ footer { font-size: 0.8rem; color: var(--muted); }
 .cfg-row { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; gap: 8px; align-items: stretch; }
 .cfg-row .copy { padding: 5px 12px; }
 .copy.armed { border-color: var(--pwr); color: var(--pwr); }
+.cfg-cur { align-items: center; margin-bottom: 8px; }
+.cfg-curname { font-size: 0.88rem; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-curname b { color: var(--ink); font-weight: 600; }
+.cfg-curname .dirty { color: var(--accent); }
+.copy.cfg-main { border-color: var(--accent); }
+.copy:disabled { opacity: 0.55; cursor: default; }
 </style>
 </head>
 <body>
@@ -186,6 +192,10 @@ footer { font-size: 0.8rem; color: var(--muted); }
     <form class="panel" id="form" onsubmit="return false">
       <fieldset id="cfgSet">
         <legend>Saved configurations</legend>
+        <div class="cfg-row cfg-cur" id="cfgCurRow" hidden>
+          <span class="cfg-curname" id="cfgCur" aria-live="polite"></span>
+          <button type="button" class="copy cfg-main" id="cfgSaveCur" title="Save over the configuration you're working on (Ctrl+S)">Save</button>
+        </div>
         <div class="cfg-row">
           <input type="text" id="cfgName" placeholder="Name this setup" aria-label="Configuration name" maxlength="80">
           <button type="button" class="copy" id="cfgSave">Save</button>
@@ -606,6 +616,30 @@ footer { font-size: 0.8rem; color: var(--muted); }
     const clean = (s) => (s.trim() || "untitled").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 80);
     const fsOk = "showDirectoryPicker" in window;
     let cfgDir = null, dir = null;
+    // the configuration being worked on: loaded or last saved. Kept in localStorage so it survives a reload.
+    const CUR = "ledcalc-current-" + app;
+    let cur = null; // { fname, name, snap } — snap is the state as last loaded or saved, to spot unsaved changes
+    try { const c = JSON.parse(localStorage.getItem(CUR)); if (c && c.fname) cur = c; } catch (e) {}
+    const snap = () => { try { return JSON.stringify(getState()); } catch (e) { return ""; } };
+    function setCur(fname, name) {
+      cur = fname ? { fname, name: name || fname.replace(/\.json$/i, ""), snap: snap() } : null;
+      try { if (cur) localStorage.setItem(CUR, JSON.stringify(cur)); else localStorage.removeItem(CUR); } catch (e) {}
+      showCur();
+    }
+    function showCur() {
+      el("cfgCurRow").hidden = !cur;
+      const sv = el("cfgSave");
+      if (!sv.classList.contains("armed")) sv.textContent = cur ? "Save as new" : "Save";
+      el("cfgName").placeholder = cur ? "Name for a new copy" : "Name this setup";
+      if (!cur) return;
+      const dirty = snap() !== cur.snap;
+      const b = document.createElement("b"); b.textContent = cur.name;
+      const t = document.createElement("span"); t.textContent = dirty ? " · unsaved changes" : " · saved"; if (dirty) t.className = "dirty";
+      el("cfgCur").replaceChildren("Working on ", b, t);
+      el("cfgCur").title = cur.fname;
+      const bt = el("cfgSaveCur");
+      bt.disabled = !dirty; bt.textContent = dirty ? "Save" : "Saved";
+    }
 
     function idb(mode, fn) {
       return new Promise((res, rej) => {
@@ -631,7 +665,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
       if (o.app !== app) throw new Error("this file is for the " + o.app + " planner");
       applyState(o.state);
       afterLoad();
-      el("cfgName").value = o.name || "";
+      el("cfgName").value = "";
       return o.name || "configuration";
     }
 
@@ -690,28 +724,50 @@ footer { font-size: 0.8rem; color: var(--muted); }
       } catch (e) { if (e.name !== "AbortError") status("Couldn't open that folder: " + e.message, true); }
     }
 
+    function download(fname, name) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([file(name)], { type: "application/json" }));
+      a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      setCur(fname, name);
+      status("Downloaded " + fname + ". Move it into configs/" + app + " to keep it with the others.");
+    }
+    async function write(fname, name) {
+      const fh = await dir.getFileHandle(fname, { create: true });
+      const w = await fh.createWritable();
+      await w.write(file(name)); await w.close();
+      setCur(fname, name);
+      await refresh(fname);
+      status("Saved " + cfgDir.name + "/" + app + "/" + fname);
+    }
+
+    // "Save as new": a new file named from the text box
     async function save() {
       const name = el("cfgName").value.trim() || "untitled";
       const fname = clean(name) + ".json";
       if (!dir) {
-        if (fsOk) { status("Choose the configs folder first.", true); return; }
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([file(name)], { type: "application/json" }));
-        a.download = fname; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-        status("Downloaded " + fname + ". Move it into configs/" + app + " to keep it with the others.");
+        if (fsOk) { status(cfgDir ? "Click Reconnect folder first." : "Choose the configs folder first.", true); return; }
+        download(fname, name); el("cfgName").value = "";
         return;
       }
       try {
         let exists = false;
         try { await dir.getFileHandle(fname); exists = true; } catch (e) {}
-        if (exists && !armed(el("cfgSave"), "Overwrite?")) { status(fname + " already exists. Click Overwrite? to replace it.", true); return; }
-        const fh = await dir.getFileHandle(fname, { create: true });
-        const w = await fh.createWritable();
-        await w.write(file(name)); await w.close();
-        await refresh(fname);
-        status("Saved " + cfgDir.name + "/" + app + "/" + fname);
+        if (exists && !(cur && cur.fname === fname) && !armed(el("cfgSave"), "Overwrite?")) { status(fname + " already exists. Click Overwrite? to replace it.", true); return; }
+        await write(fname, name);
+        el("cfgName").value = ""; showCur();
       } catch (e) { status("Save failed: " + e.message, true); }
+    }
+
+    // "Save": over the configuration being worked on, no name or second click needed
+    async function saveCur() {
+      if (!cur) { el("cfgName").focus(); return; }
+      if (!dir) {
+        if (fsOk) { status(cfgDir ? "Click Reconnect folder, then Save again." : "Choose the configs folder first.", true); return; }
+        download(cur.fname, cur.name);
+        return;
+      }
+      try { await write(cur.fname, cur.name); } catch (e) { status("Save failed: " + e.message, true); }
     }
 
     async function load() {
@@ -719,7 +775,9 @@ footer { font-size: 0.8rem; color: var(--muted); }
       if (!fname || !dir) return;
       try {
         const f = await (await dir.getFileHandle(fname)).getFile();
-        status("Loaded " + apply(await f.text()) + ".");
+        const name = apply(await f.text());
+        setCur(fname, name);
+        status("Loaded " + name + ".");
       } catch (e) { status("Couldn't load " + fname + ": " + e.message, true); }
     }
 
@@ -727,11 +785,15 @@ footer { font-size: 0.8rem; color: var(--muted); }
       const fname = el("cfgList").value;
       if (!fname || !dir) return;
       if (!armed(el("cfgDel"), "Sure?")) return;
-      try { await dir.removeEntry(fname); await refresh(); status("Deleted " + fname + "."); }
+      try { await dir.removeEntry(fname); if (cur && cur.fname === fname) setCur(null); await refresh(); status("Deleted " + fname + "."); }
       catch (e) { status("Delete failed: " + e.message, true); }
     }
 
     el("cfgSave").addEventListener("click", save);
+    el("cfgSaveCur").addEventListener("click", saveCur);
+    document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveCur(); } });
+    showCur();
+    setInterval(() => { if (cur && !document.hidden) showCur(); }, 700);
     el("cfgLoad").addEventListener("click", load);
     el("cfgDel").addEventListener("click", del);
     el("cfgList").addEventListener("dblclick", load);
@@ -748,7 +810,7 @@ footer { font-size: 0.8rem; color: var(--muted); }
       el("cfgFile").addEventListener("change", async () => {
         const f = el("cfgFile").files[0]; el("cfgFile").value = "";
         if (!f) return;
-        try { status("Loaded " + apply(await f.text()) + "."); } catch (e) { status("Couldn't load " + f.name + ": " + e.message, true); }
+        try { const name = apply(await f.text()); setCur(f.name, name); status("Loaded " + name + "."); } catch (e) { status("Couldn't load " + f.name + ": " + e.message, true); }
       });
       status("This browser can't write to folders, so Save downloads a file and Load from file opens one. Chrome or Edge can save straight into configs/" + app + ".");
     }
